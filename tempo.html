@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>テンポキープ・トレーナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14181F;
+    --bg-soft: #1B212B;
+    --panel: #1F2630;
+    --ink: #EDEAE2;
+    --ink-dim: #9AA1AC;
+    --amber: #D98E3C;
+    --amber-soft: #D98E3C33;
+    --good: #5FA88B;
+    --good-soft: #5FA88B26;
+    --bad: #C8553D;
+    --bad-soft: #C8553D26;
+    --line: #2B333F;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Zen Kaku Gothic New', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;touch-action:manipulation;}
+  body{
+    background: radial-gradient(ellipse 120% 80% at 50% -10%, #1C2330 0%, var(--bg) 55%);
+    color:var(--ink);
+    font-family:var(--sans);
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    -webkit-tap-highlight-color: transparent;
+    user-select:none;
+    overflow-x:hidden;
+    overscroll-behavior-y: none; /* prevent pull-to-refresh / bounce eating taps */
+  }
+  body.task-active{
+    overflow: hidden;
+    touch-action: none; /* belt-and-suspenders: no scroll/zoom gestures anywhere during the task */
+  }
+  #app{
+    width:100%;
+    max-width:560px;
+    min-height:100vh;
+    padding:28px 20px 40px;
+    display:flex;
+    flex-direction:column;
+  }
+  .screen{display:none;flex-direction:column;flex:1;position:relative;}
+  .screen.active{display:flex;}
+
+  /* ---------- Count-in overlay ---------- */
+  .countin-overlay{
+    position:absolute;
+    inset:0;
+    background:var(--bg);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    z-index:20;
+    touch-action: none; /* prevent double-tap-to-zoom and other gestures during count-in */
+  }
+  .countin-overlay.active{display:flex;}
+  .countin-number{
+    font-family:var(--mono);
+    font-size:108px;
+    font-weight:700;
+    color:var(--amber);
+    line-height:1;
+    min-width:1.2em;
+    text-align:center;
+  }
+  .countin-number.pulse{
+    animation:countPulse .22s ease-out;
+  }
+  @keyframes countPulse{
+    0%{transform:scale(1.5);opacity:0;}
+    60%{transform:scale(1);opacity:1;}
+    100%{transform:scale(1);opacity:1;}
+  }
+  .countin-label{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.16em;
+    color:var(--ink-dim);
+    text-transform:uppercase;
+  }
+
+  /* ---------- Header ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.18em;
+    color:var(--amber);
+    text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  h1{
+    font-size:26px;
+    font-weight:900;
+    margin:0 0 4px;
+    letter-spacing:0.01em;
+  }
+  .lede{
+    color:var(--ink-dim);
+    font-size:13.5px;
+    line-height:1.7;
+    margin:0 0 28px;
+  }
+
+  /* ---------- Settings ---------- */
+  .field{
+    margin-bottom:22px;
+  }
+  .field-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:10px;
+  }
+  .field-label{
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink);
+  }
+  .field-sub{
+    font-size:11px;
+    color:var(--ink-dim);
+    margin-top:2px;
+    display:block;
+  }
+  .field-value{
+    font-family:var(--mono);
+    font-size:18px;
+    font-weight:700;
+    color:var(--amber);
+    white-space:nowrap;
+  }
+  .field-value .unit{
+    font-size:11px;
+    color:var(--ink-dim);
+    font-weight:500;
+    margin-left:2px;
+  }
+  input[type=range]{
+    width:100%;
+    height:34px;
+    -webkit-appearance:none;
+    appearance:none;
+    background:transparent;
+    margin:0;
+    cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-runnable-track{
+    height:4px;
+    background:var(--line);
+    border-radius:2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:20px;height:20px;
+    border-radius:50%;
+    background:var(--amber);
+    border:3px solid var(--bg);
+    box-shadow:0 0 0 1px var(--amber);
+    margin-top:-8px;
+  }
+  input[type=range]::-moz-range-track{
+    height:4px;
+    background:var(--line);
+    border-radius:2px;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px;height:14px;
+    border-radius:50%;
+    background:var(--amber);
+    border:3px solid var(--bg);
+    box-shadow:0 0 0 1px var(--amber);
+  }
+  .scale-labels{
+    display:flex;
+    justify-content:space-between;
+    font-size:10.5px;
+    color:var(--ink-dim);
+    font-family:var(--mono);
+    margin-top:2px;
+  }
+
+  .toggle-field{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:26px;
+    padding:14px 16px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:12px;
+  }
+  .toggle-field .tf-text{flex:1;padding-right:14px;}
+  .toggle-field .field-label{margin-bottom:2px;}
+  .toggle-switch{
+    position:relative;
+    width:46px;
+    height:26px;
+    flex:none;
+    background:var(--line);
+    border-radius:13px;
+    border:none;
+    cursor:pointer;
+    transition:background .15s ease;
+  }
+  .toggle-switch.on{background:var(--amber);}
+  .toggle-switch .knob{
+    position:absolute;
+    top:3px;left:3px;
+    width:20px;height:20px;
+    border-radius:50%;
+    background:var(--ink);
+    transition:transform .15s ease;
+  }
+  .toggle-switch.on .knob{transform:translateX(20px);}
+
+  .start-btn{
+    margin-top:8px;
+    width:100%;
+    padding:18px;
+    border:none;
+    border-radius:14px;
+    background:var(--amber);
+    color:#1A1308;
+    font-family:var(--sans);
+    font-size:16px;
+    font-weight:900;
+    letter-spacing:0.02em;
+    cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease;
+    box-shadow:0 8px 24px -8px var(--amber-soft);
+  }
+  .start-btn:active{transform:scale(0.98);}
+
+  /* ---------- Task screen ---------- */
+  .task-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    margin-bottom:18px;
+  }
+  .phase-tag{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.1em;
+    padding:5px 10px;
+    border-radius:6px;
+    background:var(--good-soft);
+    color:var(--good);
+    border:1px solid color-mix(in srgb, var(--good) 40%, transparent);
+  }
+  .phase-tag.muted{
+    background:var(--bad-soft);
+    color:var(--bad);
+    border-color:color-mix(in srgb, var(--bad) 40%, transparent);
+  }
+  .abort-btn{
+    font-family:var(--sans);
+    font-size:12px;
+    font-weight:700;
+    color:var(--ink-dim);
+    background:transparent;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:5px 14px;
+    cursor:pointer;
+    position:relative;
+    z-index:21; /* clickable even while the count-in overlay (z-index:20) is up */
+    transition:color .15s ease, border-color .15s ease;
+  }
+  .abort-btn:active{
+    color:var(--ink);
+    border-color:var(--ink-dim);
+  }
+  .timer{
+    font-family:var(--mono);
+    font-size:22px;
+    font-weight:700;
+    color:var(--ink);
+    text-align:right;
+  }
+  .timer .total{color:var(--ink-dim);font-size:13px;font-weight:500;}
+
+  .beat-rail{
+    position:relative;
+    height:54px;
+    margin-bottom:6px;
+    overflow:hidden;
+    border-radius:12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+  }
+  .beat-rail.rail-hidden{
+    visibility:hidden; /* keeps layout height so nothing below shifts; rail is simply invisible */
+  }
+  .beat-rail-track{
+    position:absolute;
+    top:0;left:0;
+    height:100%;
+    display:flex;
+    align-items:center;
+    will-change:transform;
+  }
+  .beat-dot{
+    width:10px;height:10px;
+    border-radius:50%;
+    background:var(--line);
+    margin:0 21px;
+    flex:none;
+    transition:background .08s ease, transform .08s ease;
+  }
+  .beat-dot.fired{
+    background:var(--amber);
+    transform:scale(1.6);
+    box-shadow:0 0 14px 2px var(--amber-soft);
+  }
+  .beat-rail-center{
+    position:absolute;
+    left:50%;top:0;bottom:0;
+    width:2px;
+    background:var(--ink-dim);
+    opacity:0.5;
+  }
+
+  .feedback-zone{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:22px 0;
+    gap:6px;
+  }
+  .fb-mark{
+    font-size:46px;
+    font-weight:900;
+    font-family:var(--mono);
+    line-height:1;
+    transition:opacity .1s ease;
+  }
+  .fb-mark.good{color:var(--good);}
+  .fb-mark.bad{color:var(--bad);}
+  .fb-mark.miss{color:var(--ink-dim);}
+  .fb-detail{
+    font-family:var(--mono);
+    font-size:15px;
+    color:var(--ink-dim);
+    min-height:20px;
+  }
+  .fb-detail b{color:var(--ink);font-weight:700;}
+
+  .live-stats{
+    display:flex;
+    gap:10px;
+    margin-bottom:14px;
+  }
+  .live-stat{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    text-align:center;
+  }
+  .live-stat .num{
+    font-family:var(--mono);
+    font-size:18px;
+    font-weight:700;
+    color:var(--ink);
+  }
+  .live-stat .cap{
+    font-size:10.5px;
+    color:var(--ink-dim);
+    margin-top:2px;
+  }
+
+  .tap-pad{
+    height:160px;
+    border-radius:18px;
+    background:linear-gradient(180deg, var(--panel), var(--bg-soft));
+    border:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    flex-direction:column;
+    gap:4px;
+    cursor:pointer;
+    transition:background .08s ease, border-color .08s ease;
+    position:relative;
+    z-index:21; /* stays visible above the count-in overlay (z-index:20), same position */
+    touch-action: none; /* this element never triggers scroll/zoom gestures, on any device */
+  }
+  .tap-pad.pressed{
+    background:var(--amber-soft);
+    border-color:var(--amber);
+  }
+  .tap-pad .tap-main{
+    font-size:14px;
+    font-weight:700;
+    color:var(--ink);
+  }
+  .tap-pad .tap-sub{
+    font-size:11.5px;
+    color:var(--ink-dim);
+    font-family:var(--mono);
+  }
+
+  /* ---------- Result screen ---------- */
+  .result-hero{
+    text-align:center;
+    margin:8px 0 26px;
+  }
+  .result-hero .big{
+    font-family:var(--mono);
+    font-size:56px;
+    font-weight:700;
+    color:var(--amber);
+    line-height:1;
+  }
+  .result-hero .cap{
+    font-size:12.5px;
+    color:var(--ink-dim);
+    margin-top:6px;
+    letter-spacing:0.04em;
+  }
+
+  .phase-cards{
+    display:flex;
+    gap:12px;
+    margin-bottom:20px;
+  }
+  .phase-card{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px;
+  }
+  .phase-card .pc-title{
+    font-size:12px;
+    font-weight:700;
+    margin-bottom:12px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .pc-dot{width:7px;height:7px;border-radius:50%;}
+  .pc-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:12.5px;
+    padding:6px 0;
+    border-top:1px solid var(--line);
+  }
+  .pc-row:first-of-type{border-top:none;}
+  .pc-row .v{
+    font-family:var(--mono);
+    font-weight:700;
+    color:var(--ink);
+  }
+  .pc-row .l{color:var(--ink-dim);}
+
+  .bias-note{
+    font-size:12px;
+    color:var(--ink-dim);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:24px;
+    line-height:1.6;
+  }
+  .bias-note b{color:var(--ink);}
+
+  .retry-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:26px;
+  }
+  .btn-secondary{
+    flex:1;
+    padding:15px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    transition:opacity .15s ease;
+  }
+  .btn-primary{
+    flex:1.4;
+    padding:15px;
+    border-radius:12px;
+    border:none;
+    background:var(--amber);
+    color:#1A1308;
+    font-family:var(--sans);
+    font-size:14px;
+    font-weight:900;
+    cursor:pointer;
+    transition:opacity .15s ease;
+  }
+  .btn-secondary:disabled,
+  .btn-primary:disabled{
+    opacity:0.35;
+    cursor:not-allowed;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ SETTINGS SCREEN ============ -->
+  <section class="screen active" id="screen-settings">
+    <div class="eyebrow">SENSORIMOTOR SYNC TRAINER</div>
+    <h1>テンポキープ・トレーナー</h1>
+    <p class="lede">
+      設定したBPMでメトロノームが鳴ります。クリックに合わせてスペースキー、または画面をタップしてビートを刻んでください。
+      課題中はランダムに音が消えますが、その間も同じテンポで刻み続けてください。
+    </p>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">テンポ（BPM）</div>
+        </div>
+        <div class="field-value"><span id="val-bpm">100</span><span class="unit">BPM</span></div>
+      </div>
+      <input type="range" id="sl-bpm" min="40" max="220" step="1" value="100">
+      <div class="scale-labels"><span>40（遅い）</span><span>220（速い）</span></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">判定の許容範囲</div>
+          <span class="field-sub">ズレがこの%以内なら「正解」</span>
+        </div>
+        <div class="field-value">±<span id="val-tol">15</span><span class="unit">%</span></div>
+      </div>
+      <input type="range" id="sl-tol" min="5" max="30" step="1" value="15">
+      <div class="scale-labels"><span>5%（厳しめ）</span><span>30%（やさしめ）</span></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">音声出力遅延の補正</div>
+          <span class="field-sub">端末のスピーカー遅延を補正する。「遅れている」と判定されがちな場合は数値を上げる</span>
+        </div>
+        <div class="field-value"><span id="val-latency">0</span><span class="unit">ms</span></div>
+      </div>
+      <input type="range" id="sl-latency" min="0" max="150" step="5" value="0">
+      <div class="scale-labels"><span>0ms（補正なし）</span><span>150ms</span></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">音の消失拍数</div>
+          <span class="field-sub">1回あたり何拍ほど消えるか</span>
+        </div>
+        <div class="field-value"><span id="val-droplen">10</span><span class="unit">拍前後</span></div>
+      </div>
+      <input type="range" id="sl-droplen" min="2" max="16" step="1" value="10">
+      <div class="scale-labels"><span>短い（2拍）</span><span>長い（16拍）</span></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">音の消失頻度</div>
+          <span class="field-sub">実施時間のうち何%を無音にするか</span>
+        </div>
+        <div class="field-value"><span id="val-droppct">60</span><span class="unit">%</span></div>
+      </div>
+      <input type="range" id="sl-droppct" min="0" max="80" step="5" value="60">
+      <div class="scale-labels"><span>0%（消失なし）</span><span>80%</span></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <div>
+          <div class="field-label">課題の実施時間</div>
+        </div>
+        <div class="field-value"><span id="val-dur">60秒</span></div>
+      </div>
+      <input type="range" id="sl-dur" min="20" max="300" step="5" value="60">
+      <div class="scale-labels"><span>20秒</span><span>5分</span></div>
+    </div>
+
+    <div class="toggle-field">
+      <div class="tf-text">
+        <div class="field-label">タップ毎の即時フィードバック</div>
+        <span class="field-sub">○×やズレ%をタップごとに表示するか。オフにすると拍の流れるレール表示も消え、結果画面でのみ確認できます。</span>
+      </div>
+      <button type="button" class="toggle-switch on" id="toggle-feedback" aria-pressed="true">
+        <span class="knob"></span>
+      </button>
+    </div>
+
+    <button class="start-btn" id="btn-start">課題を開始する</button>
+  </section>
+
+  <!-- ============ TASK SCREEN ============ -->
+  <section class="screen" id="screen-task">
+    <div class="countin-overlay" id="countin-overlay">
+      <div class="countin-number" id="countin-number"></div>
+      <div class="countin-label">カウントイン（採点対象外）</div>
+    </div>
+
+    <div class="task-top">
+      <span class="phase-tag" id="phase-tag">♪ 音あり</span>
+      <button type="button" class="abort-btn" id="btn-abort">終了</button>
+      <div class="timer"><span id="time-left">60</span><span class="total" id="time-total">/60s</span></div>
+    </div>
+
+    <div class="beat-rail" id="beat-rail">
+      <div class="beat-rail-center"></div>
+      <div class="beat-rail-track" id="beat-rail-track"></div>
+    </div>
+
+    <div class="feedback-zone">
+      <div class="fb-mark" id="fb-mark">—</div>
+      <div class="fb-detail" id="fb-detail">タップしてビートを開始</div>
+    </div>
+
+    <div class="live-stats">
+      <div class="live-stat"><div class="num" id="stat-acc">--%</div><div class="cap">正答率</div></div>
+      <div class="live-stat"><div class="num" id="stat-taps">0</div><div class="cap">タップ数</div></div>
+      <div class="live-stat"><div class="num" id="stat-avgdev">--%</div><div class="cap">平均ズレ</div></div>
+    </div>
+
+    <div class="tap-pad" id="tap-pad">
+      <div class="tap-main">ここをタップ／スペースキー</div>
+      <div class="tap-sub">TAP TO THE BEAT</div>
+    </div>
+  </section>
+
+  <!-- ============ RESULT SCREEN ============ -->
+  <section class="screen" id="screen-result">
+    <div class="eyebrow">RESULT</div>
+    <h1>お疲れさまでした</h1>
+
+    <div class="retry-row" id="retry-row">
+      <button class="btn-secondary" id="btn-settings">設定を変える</button>
+      <button class="btn-primary" id="btn-retry">同じ設定で再挑戦</button>
+    </div>
+
+    <div class="result-hero">
+      <div class="big" id="res-overall">--%</div>
+      <div class="cap">総合正答率</div>
+    </div>
+
+    <div class="phase-cards">
+      <div class="phase-card">
+        <div class="pc-title"><span class="pc-dot" style="background:var(--good)"></span>音あり時</div>
+        <div class="pc-row"><span class="l">正答率</span><span class="v" id="res-on-acc">--%</span></div>
+        <div class="pc-row"><span class="l">平均ズレ（絶対値）</span><span class="v" id="res-on-dev">--%</span></div>
+        <div class="pc-row"><span class="l">拍数</span><span class="v" id="res-on-n">--</span></div>
+      </div>
+      <div class="phase-card">
+        <div class="pc-title"><span class="pc-dot" style="background:var(--bad)"></span>消失時</div>
+        <div class="pc-row"><span class="l">正答率</span><span class="v" id="res-off-acc">--%</span></div>
+        <div class="pc-row"><span class="l">平均ズレ（絶対値）</span><span class="v" id="res-off-dev">--%</span></div>
+        <div class="pc-row"><span class="l">拍数</span><span class="v" id="res-off-n">--</span></div>
+      </div>
+    </div>
+
+    <div class="bias-note" id="bias-note">傾向を計算中…</div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- DOM refs ---------------- */
+  const screens = {
+    settings: document.getElementById('screen-settings'),
+    task: document.getElementById('screen-task'),
+    result: document.getElementById('screen-result'),
+  };
+  function showScreen(name){
+    Object.values(screens).forEach(s=>s.classList.remove('active'));
+    screens[name].classList.add('active');
+    document.body.classList.toggle('task-active', name === 'task');
+    window.scrollTo(0, 0); // avoid leftover scroll position from a taller previous screen
+  }
+
+  const sl = {
+    bpm: document.getElementById('sl-bpm'),
+    tol: document.getElementById('sl-tol'),
+    latency: document.getElementById('sl-latency'),
+    droplen: document.getElementById('sl-droplen'),
+    droppct: document.getElementById('sl-droppct'),
+    dur: document.getElementById('sl-dur'),
+  };
+  const val = {
+    bpm: document.getElementById('val-bpm'),
+    tol: document.getElementById('val-tol'),
+    latency: document.getElementById('val-latency'),
+    droplen: document.getElementById('val-droplen'),
+    droppct: document.getElementById('val-droppct'),
+    dur: document.getElementById('val-dur'),
+  };
+  function fmtDur(s){
+    if(s < 60) return s + '秒';
+    const m = Math.floor(s/60), r = s%60;
+    return r===0 ? (m+'分') : (m+'分'+r+'秒');
+  }
+  sl.bpm.addEventListener('input', ()=> val.bpm.textContent = sl.bpm.value);
+  sl.tol.addEventListener('input', ()=> val.tol.textContent = sl.tol.value);
+  sl.latency.addEventListener('input', ()=> val.latency.textContent = sl.latency.value);
+  sl.droplen.addEventListener('input', ()=> val.droplen.textContent = sl.droplen.value);
+  sl.droppct.addEventListener('input', ()=> val.droppct.textContent = sl.droppct.value);
+  sl.dur.addEventListener('input', ()=> val.dur.textContent = fmtDur(parseInt(sl.dur.value,10)));
+
+  /* ---------------- Immediate feedback on/off toggle ---------------- */
+  let immediateFeedbackEnabled = true; // default: on
+  const toggleFeedbackBtn = document.getElementById('toggle-feedback');
+  toggleFeedbackBtn.addEventListener('click', ()=>{
+    immediateFeedbackEnabled = !immediateFeedbackEnabled;
+    toggleFeedbackBtn.classList.toggle('on', immediateFeedbackEnabled);
+    toggleFeedbackBtn.setAttribute('aria-pressed', String(immediateFeedbackEnabled));
+  });
+
+  /* ---------------- Android default latency offset ---------------- */
+  // Android's audio output latency (OS audio stack, browser-independent) is
+  // typically 50-150ms — far larger than iOS/iPadOS. Preset the correction
+  // slider to a middle-of-the-road 80ms on any Android device; the user can
+  // still adjust manually. Applied ONCE at page load only, so a value the
+  // user has adjusted is never overwritten by a screen transition.
+  if(/Android/i.test(navigator.userAgent)){
+    sl.latency.value = 80;
+    val.latency.textContent = '80';
+  }
+
+  /* ---------------- Audio setup ---------------- */
+  let audioCtx = null;
+  let masterGain = null; // all clicks route through this; muted on abort to silence pre-scheduled clicks
+
+  function attachStateChangeHandler(ctx){
+    ctx.onstatechange = ()=>{
+      if((ctx.state === 'suspended' || ctx.state === 'interrupted') && task && !task.ended){
+        abortTask();
+      }
+    };
+  }
+
+  function createAudioContext(){
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const gain = ctx.createGain();
+    gain.connect(ctx.destination);
+    attachStateChangeHandler(ctx);
+    audioCtx = ctx;
+    masterGain = gain;
+    return ctx;
+  }
+
+  // Returns a Promise that resolves once audioCtx is guaranteed to be
+  // 'running'. Does NOT trust audioCtx.state as an early-exit condition:
+  // iOS/WebKit can report a stale state (e.g. still 'running') right after
+  // a screen-lock audio interruption, even though playback is actually
+  // dead. So resume() is always called, its completion is always awaited,
+  // and if the context still isn't 'running' afterwards (or resume()
+  // rejects), the context is torn down and recreated from scratch as a
+  // fallback. This is what actually fixes the "silent after screen lock,
+  // works after page reload" symptom: a page reload implicitly does this
+  // same recreation, so we now do it in-place instead of requiring one.
+  function ensureAudio(){
+    if(!audioCtx || audioCtx.state === 'closed'){
+      createAudioContext();
+    }
+    return audioCtx.resume()
+      .catch(()=>{ /* ignore; checked below */ })
+      .then(()=>{
+        if(audioCtx.state === 'running') return;
+        // resume() didn't actually bring it back — rebuild the context
+        try{ audioCtx.close(); }catch(e){}
+        createAudioContext();
+        return audioCtx.resume().catch(()=>{});
+      });
+  }
+
+  function playClick(time, accent){
+    // short synthesized click: percussive blip, slightly higher pitch on accent (unused for now, all beats equal)
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = accent ? 1500 : 1100;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.5, time + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.045);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(time);
+    osc.stop(time + 0.05);
+  }
+
+  /* ---------------- Task state ---------------- */
+  let task = null; // holds all state for the currently running task
+
+  function buildDropoutWindows(totalBeats, dropPct, dropLenTarget){
+    // returns array of {start, end} beat-index ranges (end exclusive), non-overlapping,
+    // with margin at the very start/end and minimum gap between windows.
+    // Walks forward through the task sequentially, alternating a randomized sync
+    // gap and a randomized dropout window (around dropLenTarget), until the
+    // accumulated dropout beats reach the requested percentage of totalBeats.
+    if(dropPct <= 0) return [];
+    const MARGIN_START = 8;   // beats of guaranteed sync before first dropout can start
+    const MARGIN_END = 2;     // beats of guaranteed sync after last dropout
+    const MIN_GAP = 4;        // minimum synced beats between dropouts
+
+    const usable = totalBeats - MARGIN_START - MARGIN_END;
+    if(usable <= 0) return [];
+
+    const targetDropoutBeats = Math.round(totalBeats * dropPct / 100);
+    if(targetDropoutBeats <= 0) return [];
+
+    const windows = [];
+    let accumulated = 0;
+    let cursor = MARGIN_START + Math.floor(Math.random() * MIN_GAP); // small random offset before first window
+
+    while(accumulated < targetDropoutBeats){
+      if(cursor + 1 > totalBeats - MARGIN_END) break; // no room left at all
+
+      const lenJitter = 0.7 + Math.random()*0.6; // +-30%
+      let len = Math.max(1, Math.round(dropLenTarget * lenJitter));
+
+      // avoid wildly overshooting the remaining budget on the last window
+      const remaining = targetDropoutBeats - accumulated;
+      if(len > remaining + dropLenTarget){
+        len = Math.max(1, remaining);
+      }
+      len = Math.min(len, totalBeats - MARGIN_END - cursor);
+      if(len <= 0) break;
+
+      const start = cursor;
+      const end = start + len;
+      windows.push({start, end});
+      accumulated += len;
+      cursor = end;
+
+      if(accumulated >= targetDropoutBeats) break;
+      cursor += MIN_GAP + Math.floor(Math.random() * MIN_GAP); // randomized 4-7 beat sync gap before next window
+    }
+    return windows;
+  }
+
+  function isInDropout(beatIndex, windows){
+    for(const w of windows){
+      if(beatIndex >= w.start && beatIndex < w.end) return true;
+    }
+    return false;
+  }
+
+  function startTask(){
+    // a button (start/retry) may still hold keyboard focus; drop it so a
+    // subsequent Space press is always a beat tap, never a button re-activation
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+
+    // Everything that reads audioCtx.currentTime or schedules audio must
+    // wait until the context is confirmed 'running'. See ensureAudio() for
+    // why this can no longer be a fire-and-forget call.
+    ensureAudio().then(()=>{
+      masterGain.gain.value = 1; // may have been muted by a previous abort
+
+      const bpm = parseInt(sl.bpm.value, 10);
+      const tolerancePct = parseInt(sl.tol.value, 10);
+      const latencyOffsetSec = parseInt(sl.latency.value, 10) / 1000; // ms -> seconds
+      const dropLenTarget = parseInt(sl.droplen.value, 10);
+      const dropPct = parseInt(sl.droppct.value, 10);
+      const durationSec = parseInt(sl.dur.value, 10);
+
+      const beatInterval = 60 / bpm; // seconds
+      const totalBeats = Math.ceil(durationSec / beatInterval) + 2; // small buffer
+      const dropWindows = buildDropoutWindows(totalBeats, dropPct, dropLenTarget);
+
+      const COUNT_IN_BEATS = 4;
+      const leadIn = 0.15; // scheduling buffer before the very first count-in click
+      // task beat 0 (the first scored beat) starts only after the 4-beat count-in
+      const startTime = audioCtx.currentTime + leadIn + COUNT_IN_BEATS * beatInterval;
+
+      task = {
+        bpm, beatInterval, tolerancePct, latencyOffsetSec, durationSec,
+        startTime,
+        totalBeats,
+        dropWindows,
+        nextBeatToSchedule: 0,
+        nextBeatToJudge: 0,   // missed-beat judgment cursor, driven by the audio clock in the scheduler
+        schedulerTimer: null,
+        uiTimer: null,
+        railWidth: 0,          // cached once at task start; avoids per-frame layout reads
+        lastShownRemaining: null,
+        lastPhaseDropped: null,
+        matchedBeats: new Map(), // beatIndex -> {devPct, correct, dropout}
+        taps: [],
+        ended: false,
+        lastJudgedBeat: -1,
+        lastFeedbackBeat: -1,
+        railBeatEls: [],
+      };
+
+      // feedback OFF mode: hide the entire beat rail (visibility keeps its layout
+      // space, so the timer / feedback zone / tap pad stay in the same positions)
+      document.getElementById('beat-rail').classList.toggle('rail-hidden', !immediateFeedbackEnabled);
+
+      buildRailDots();
+      document.getElementById('time-total').textContent = '/' + durationSec + 's';
+      showScreen('task');
+      // rail width is fixed for the whole task (visibility:hidden keeps layout,
+      // so this stays valid even in feedback-off mode)
+      task.railWidth = document.getElementById('beat-rail').clientWidth;
+      showCountInOverlay();
+      scheduleCountIn(startTime, beatInterval, COUNT_IN_BEATS);
+      runScheduler();
+      runUiLoop();
+      // NOTE: task end and missed-beat judgment are driven off the audio clock
+      // inside the scheduler loop — there is no setTimeout deadline that could
+      // drift away from the audio (Android timer throttling / suspend issues)
+    });
+  }
+
+  /* ---- count-in: 4 audible pickup clicks at the task tempo, not scored ---- */
+  function showCountInOverlay(){
+    const overlay = document.getElementById('countin-overlay');
+    const numEl = document.getElementById('countin-number');
+    numEl.textContent = '';
+    overlay.classList.add('active');
+  }
+  function hideCountInOverlay(){
+    document.getElementById('countin-overlay').classList.remove('active');
+  }
+  function updateCountInDisplay(n){
+    const numEl = document.getElementById('countin-number');
+    numEl.textContent = n;
+    numEl.classList.remove('pulse');
+    void numEl.offsetWidth; // force reflow so the animation re-triggers each beat
+    numEl.classList.add('pulse');
+  }
+  function playCountInClick(time){
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 720;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.4, time + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.07);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(time);
+    osc.stop(time + 0.08);
+  }
+  function scheduleCountIn(startTime, beatInterval, countInBeats){
+    const myTask = task; // stale-callback guard: no-op if the task was aborted or restarted
+    for(let i=0;i<countInBeats;i++){
+      const t = startTime - (countInBeats - i) * beatInterval;
+      playCountInClick(t); // sample-accurate audio scheduling
+      const delayMs = Math.max(0, (t - audioCtx.currentTime) * 1000);
+      const n = i + 1;
+      setTimeout(()=>{ if(task === myTask && !myTask.ended) updateCountInDisplay(n); }, delayMs);
+    }
+    const hideDelayMs = Math.max(0, (startTime - audioCtx.currentTime) * 1000);
+    setTimeout(()=>{ if(task === myTask && !myTask.ended) hideCountInOverlay(); }, hideDelayMs);
+  }
+
+  function buildRailDots(){
+    const track = document.getElementById('beat-rail-track');
+    track.innerHTML = '';
+    task.railBeatEls = [];
+    const n = task.totalBeats;
+    const frag = document.createDocumentFragment();
+    for(let i=0;i<n;i++){
+      const d = document.createElement('div');
+      d.className = 'beat-dot';
+      frag.appendChild(d);
+      task.railBeatEls.push(d);
+    }
+    track.appendChild(frag);
+  }
+
+  function updateRailPosition(currentBeatFloat){
+    const track = document.getElementById('beat-rail-track');
+    const dotSpacing = 10 + 21*2; // width + margins approx
+    const centerOffset = task.railWidth/2; // cached at task start — no per-frame clientWidth read
+    const x = centerOffset - currentBeatFloat*dotSpacing - 5;
+    track.style.transform = `translateX(${x}px)`;
+  }
+
+  function flashBeatDot(beatIndex, audible){
+    const el = task.railBeatEls[beatIndex];
+    if(!el) return;
+    if(audible){
+      el.classList.add('fired');
+      setTimeout(()=> el.classList.remove('fired'), 110);
+    }
+  }
+
+  /* ---- scheduler: lookahead audio scheduling, drift-free ----
+     This loop also drives missed-beat judgment and task end by reading the
+     audio clock every tick. setTimeout throttling can only make these checks
+     fire slightly LATE (never early, never desynchronized from the audio),
+     and an OS audio interruption aborts the task via other channels anyway. */
+  function runScheduler(){
+    const SCHEDULE_AHEAD = 0.12; // seconds
+    const myTask = task; // stale-callback guard for abort / immediate retry
+    function tick(){
+      if(myTask.ended) return;
+      const now = audioCtx.currentTime;
+
+      // schedule upcoming clicks
+      while(myTask.nextBeatToSchedule < myTask.totalBeats){
+        const beatTime = myTask.startTime + myTask.nextBeatToSchedule * myTask.beatInterval;
+        if(beatTime > now + SCHEDULE_AHEAD) break;
+        const idx = myTask.nextBeatToSchedule;
+        const dropped = isInDropout(idx, myTask.dropWindows);
+        if(!dropped){
+          playClick(beatTime, idx % 4 === 0);
+        }
+        const delay = Math.max(0, (beatTime - audioCtx.currentTime))*1000;
+        setTimeout(()=>{ if(task === myTask && !myTask.ended) flashBeatDot(idx, !dropped); }, delay);
+        myTask.nextBeatToSchedule++;
+      }
+
+      // judge beats whose judgment point (beat time + half interval) has passed
+      while(myTask.nextBeatToJudge < myTask.totalBeats &&
+            now >= myTask.startTime + (myTask.nextBeatToJudge + 0.5) * myTask.beatInterval){
+        checkMissedBeat(myTask.nextBeatToJudge);
+        myTask.nextBeatToJudge++;
+      }
+
+      // end of task, judged on the audio clock itself
+      if(now >= myTask.startTime + myTask.durationSec){
+        endTask();
+        return;
+      }
+
+      myTask.schedulerTimer = setTimeout(tick, 25);
+    }
+    tick();
+  }
+
+  function checkMissedBeat(beatIndex){
+    if(task.ended) return;
+    if(!task.matchedBeats.has(beatIndex)){
+      const dropped = isInDropout(beatIndex, task.dropWindows);
+      task.matchedBeats.set(beatIndex, {devPct:null, correct:false, dropout:dropped, missed:true});
+      // only show the "missed" feedback if nothing more recent has already displayed
+      if(beatIndex >= task.lastFeedbackBeat){
+        showFeedback('miss', null);
+        task.lastFeedbackBeat = beatIndex;
+      }
+      refreshLiveStats();
+    }
+  }
+
+  /* ---- UI loop: timer + rail position + phase tag ----
+     DOM writes happen only when the displayed value actually changes, and the
+     rail transform is skipped entirely in feedback-off mode — keeps per-frame
+     main-thread work minimal so tap timestamps jitter less on slow devices. */
+  function runUiLoop(){
+    const myTask = task;
+    const railVisible = immediateFeedbackEnabled; // fixed for the whole task
+    const timeLeftEl = document.getElementById('time-left');
+    const tag = document.getElementById('phase-tag');
+    function frame(){
+      if(myTask.ended) return;
+      const elapsed = audioCtx.currentTime - myTask.startTime;
+      const remaining = elapsed < 0 ? myTask.durationSec : Math.max(0, Math.ceil(myTask.durationSec - elapsed));
+      if(remaining !== myTask.lastShownRemaining){
+        timeLeftEl.textContent = remaining;
+        myTask.lastShownRemaining = remaining;
+      }
+
+      const curBeat = Math.max(0, elapsed / myTask.beatInterval);
+      if(railVisible) updateRailPosition(curBeat);
+
+      const curBeatIdx = Math.floor(curBeat);
+      const dropped = isInDropout(curBeatIdx, myTask.dropWindows);
+      if(dropped !== myTask.lastPhaseDropped){
+        if(dropped){
+          tag.textContent = '✕ 音消失中';
+          tag.classList.add('muted');
+        } else {
+          tag.textContent = '♪ 音あり';
+          tag.classList.remove('muted');
+        }
+        myTask.lastPhaseDropped = dropped;
+      }
+
+      myTask.uiTimer = requestAnimationFrame(frame);
+    }
+    frame();
+  }
+
+  /* ---- tap handling ---- */
+  function handleTap(){
+    if(!task || task.ended) return;
+    if(!audioCtx || audioCtx.state !== 'running') return; // mid-task audio not ready; ignore stray taps
+    const t = audioCtx.currentTime;
+    // the click scheduled at beat time is actually HEARD latencyOffsetSec
+    // later, so shift the tap back by that amount before anything else.
+    // Both the nearest-beat assignment and the deviation are then computed in
+    // the same corrected time frame. (Previously the assignment used the
+    // uncorrected time, which could snap a tap to the wrong beat when the
+    // offset approached half a beat interval.)
+    const beatFloat = (t - task.latencyOffsetSec - task.startTime) / task.beatInterval;
+    if(beatFloat < -0.5){
+      pulsePad(); // count-in: give tactile/visual feedback but don't score
+      return;
+    }
+    const nearestBeat = Math.round(beatFloat);
+    const devPct = (beatFloat - nearestBeat) * 100;
+    const dropout = isInDropout(nearestBeat, task.dropWindows);
+
+    task.taps.push({beat: nearestBeat, devPct, dropout});
+
+    if(task.matchedBeats.has(nearestBeat) && !task.matchedBeats.get(nearestBeat).missed){
+      // extra/duplicate tap on an already matched beat
+      showFeedback('extra', devPct);
+      return;
+    }
+
+    const correct = Math.abs(devPct) <= task.tolerancePct;
+    task.matchedBeats.set(nearestBeat, {devPct, correct, dropout, missed:false});
+    showFeedback(correct ? 'good' : 'bad', devPct);
+    task.lastFeedbackBeat = Math.max(task.lastFeedbackBeat, nearestBeat);
+    refreshLiveStats();
+    pulsePad();
+  }
+
+  function pulsePad(){
+    const pad = document.getElementById('tap-pad');
+    pad.classList.add('pressed');
+    setTimeout(()=>pad.classList.remove('pressed'), 90);
+  }
+
+  function showFeedback(kind, devPct){
+    const mark = document.getElementById('fb-mark');
+    const detail = document.getElementById('fb-detail');
+    mark.classList.remove('good','bad','miss');
+
+    if(!immediateFeedbackEnabled){
+      // judgment is still recorded internally; only the visible mark/detail are suppressed
+      mark.textContent = '·';
+      mark.classList.add('miss');
+      detail.textContent = '記録中（結果は終了後に表示）';
+      return;
+    }
+
+    if(kind === 'good'){
+      mark.textContent = '○';
+      mark.classList.add('good');
+      detail.innerHTML = `<b>${devPct>=0?'+':''}${devPct.toFixed(1)}%</b> のズレ（一致）`;
+    } else if(kind === 'bad'){
+      mark.textContent = '×';
+      mark.classList.add('bad');
+      const dir = devPct >= 0 ? '遅れ' : '早い';
+      detail.innerHTML = `<b>${devPct>=0?'+':''}${devPct.toFixed(1)}%</b> のズレ（${dir}）`;
+    } else if(kind === 'miss'){
+      mark.textContent = '−';
+      mark.classList.add('miss');
+      detail.textContent = '見逃し（タップなし）';
+    } else if(kind === 'extra'){
+      mark.textContent = '··';
+      mark.classList.add('miss');
+      detail.textContent = '余分なタップ';
+    }
+  }
+
+  function refreshLiveStats(){
+    let correct=0, total=0, devSum=0;
+    task.matchedBeats.forEach(b=>{
+      total++;
+      if(b.correct) correct++;
+      if(b.devPct !== null) devSum += Math.abs(b.devPct);
+    });
+    document.getElementById('stat-taps').textContent = task.taps.length;
+    if(immediateFeedbackEnabled){
+      document.getElementById('stat-acc').textContent = total ? Math.round(correct/total*100)+'%' : '--%';
+      document.getElementById('stat-avgdev').textContent = total ? (devSum/total).toFixed(1)+'%' : '--%';
+    } else {
+      document.getElementById('stat-acc').textContent = '非表示';
+      document.getElementById('stat-avgdev').textContent = '非表示';
+    }
+  }
+
+  /* ---- key/tap input wiring ---- */
+  document.addEventListener('keydown', (e)=>{
+    if(e.code === 'Space' && screens.task.classList.contains('active')){
+      if(e.repeat) return;
+      e.preventDefault();
+      handleTap();
+    }
+  });
+  const tapPad = document.getElementById('tap-pad');
+  tapPad.addEventListener('pointerdown', (e)=>{
+    e.preventDefault();
+    handleTap();
+  });
+
+  /* ---- end of task / results ---- */
+  function endTask(){
+    if(!task || task.ended) return;
+    task.ended = true;
+    clearTimeout(task.schedulerTimer);
+    if(task.uiTimer) cancelAnimationFrame(task.uiTimer);
+
+    // finalize: mark any very last beat near the end as missed if unmatched (best effort, minor edge case ignored)
+    computeAndShowResults();
+  }
+
+  function computeAndShowResults(){
+    let on = {correct:0, total:0, devSum:0};
+    let off = {correct:0, total:0, devSum:0};
+    let signedSum = 0, signedN = 0;
+
+    task.matchedBeats.forEach(b=>{
+      const bucket = b.dropout ? off : on;
+      bucket.total++;
+      if(b.correct) bucket.correct++;
+      if(b.devPct !== null){
+        bucket.devSum += Math.abs(b.devPct);
+        signedSum += b.devPct;
+        signedN++;
+      }
+    });
+
+    const overallTotal = on.total + off.total;
+    const overallCorrect = on.correct + off.correct;
+    const overallPct = overallTotal ? Math.round(overallCorrect/overallTotal*100) : 0;
+
+    document.getElementById('res-overall').textContent = overallPct + '%';
+
+    document.getElementById('res-on-acc').textContent = on.total ? Math.round(on.correct/on.total*100)+'%' : '--%';
+    document.getElementById('res-on-dev').textContent = on.total ? (on.devSum/on.total).toFixed(1)+'%' : '--%';
+    document.getElementById('res-on-n').textContent = on.total;
+
+    document.getElementById('res-off-acc').textContent = off.total ? Math.round(off.correct/off.total*100)+'%' : '--%';
+    document.getElementById('res-off-dev').textContent = off.total ? (off.devSum/off.total).toFixed(1)+'%' : '--%';
+    document.getElementById('res-off-n').textContent = off.total;
+
+    const biasNote = document.getElementById('bias-note');
+    if(signedN === 0){
+      biasNote.textContent = 'タップが記録されませんでした。';
+    } else {
+      const avgSigned = signedSum/signedN;
+      let tendency;
+      if(Math.abs(avgSigned) < 2){
+        tendency = '方向の偏りは小さく、テンポにほぼ正確に乗れています（前ズレ後ズレ含めた平均による指標です）。';
+      } else if(avgSigned < 0){
+        tendency = `前ズレ後ズレ含めた平均で、<b>${Math.abs(avgSigned).toFixed(1)}%早い</b>方向への偏り（突っ走り）が見られます。`;
+      } else {
+        tendency = `前ズレ後ズレ含めた平均で、<b>${avgSigned.toFixed(1)}%遅い</b>方向への偏り（後ろ乗り）が見られます。`;
+      }
+      const onAvgDev = on.total ? on.devSum/on.total : null;
+      const offAvgDev = off.total ? off.devSum/off.total : null;
+      const DEV_DIFF_THRESHOLD = 1.5; // percentage points; below this, treat as "no meaningful difference"
+      let offNote = '';
+      if(onAvgDev !== null && offAvgDev !== null){
+        const diff = offAvgDev - onAvgDev;
+        if(diff > DEV_DIFF_THRESHOLD){
+          offNote = '音が消失している間にズレが大きくなる傾向があり、内部テンポの保持に伸びしろがあります。';
+        } else if(diff < -DEV_DIFF_THRESHOLD){
+          offNote = '音が消失している間の方がズレが小さく、音に頼らずテンポを保てています。';
+        } else {
+          offNote = '音あり時と消失時でズレ量に大きな差はありませんでした。';
+        }
+      }
+      biasNote.innerHTML = tendency + (offNote ? ' ' + offNote : '');
+    }
+
+    showScreen('result');
+    lockResultButtons();
+  }
+
+  /* ---- prevent accidental taps right after the task ends from hitting these buttons ---- */
+  const RESULT_BUTTON_LOCK_MS = 1500;
+  function lockResultButtons(){
+    const btnSettings = document.getElementById('btn-settings');
+    const btnRetry = document.getElementById('btn-retry');
+    btnSettings.disabled = true;
+    btnRetry.disabled = true;
+    setTimeout(()=>{
+      btnSettings.disabled = false;
+      btnRetry.disabled = false;
+    }, RESULT_BUTTON_LOCK_MS);
+  }
+
+  /* ---- mid-task abort: quit button / app switch / audio interruption ----
+     Spec: any interruption immediately terminates the task, DISCARDS all
+     recorded taps, and returns to the settings screen. Two detection
+     channels: visibilitychange (app switch, screen lock, tab change) and
+     AudioContext statechange (OS reclaimed audio; see ensureAudio). */
+  function abortTask(){
+    if(!task || task.ended) return;
+    task.ended = true;
+    clearTimeout(task.schedulerTimer);
+    if(task.uiTimer) cancelAnimationFrame(task.uiTimer);
+    if(masterGain) masterGain.gain.value = 0; // silence clicks already scheduled up to ~120ms ahead
+    hideCountInOverlay(); // the abort may have happened during count-in
+    showScreen('settings');
+  }
+
+  const btnAbort = document.getElementById('btn-abort');
+  btnAbort.addEventListener('pointerdown', (e)=>{
+    // pointerdown-driven (not click): the iOS zoom guard below suppresses
+    // touchend during the task, which would swallow synthesized click events
+    e.preventDefault();
+    btnAbort.blur(); // never leave keyboard focus on this button — Space must stay a beat tap
+    abortTask();
+  });
+
+  /* ---- iOS zoom suppression (task screen only) ----
+     iOS Safari ignores user-scalable=no / maximum-scale (accessibility
+     policy) and its double-tap-zoom heuristic bypasses touch-action on rapid
+     alternating taps. The zoom decision is made at touchend, so the block is
+     to preventDefault touchend. During the task, EVERY touchend is blocked
+     unconditionally: a time-windowed guard proved leaky, because iOS's own
+     double-tap window (~500ms) extended past the guard's — taps at 400-480ms
+     intervals (BPM 125-150) slipped through the gap. Nothing on the task
+     screen relies on click events (abort button and tap pad are both
+     pointerdown-driven), so blocking all touchend costs nothing.
+     gesturestart/gesturechange (WebKit-only, all iOS browsers) additionally
+     block pinch, e.g. when two tapping fingers overlap and get misread as a
+     pinch. Both guards are inert outside the task screen, so settings
+     sliders and accessibility zoom work as usual there. */
+  document.addEventListener('touchend', (e)=>{
+    if(!screens.task.classList.contains('active')) return;
+    e.preventDefault();
+  }, {passive:false});
+
+  ['gesturestart','gesturechange'].forEach((type)=>{
+    document.addEventListener(type, (e)=>{
+      if(screens.task.classList.contains('active')) e.preventDefault();
+    }, {passive:false});
+  });
+
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden && task && !task.ended) abortTask();
+  });
+
+  /* ---------------- wiring ---------------- */
+  document.getElementById('btn-start').addEventListener('click', startTask);
+  document.getElementById('btn-retry').addEventListener('click', startTask);
+  document.getElementById('btn-settings').addEventListener('click', ()=> showScreen('settings'));
+
+})();
+</script>
+</body>
+</html>
