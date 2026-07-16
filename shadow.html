@@ -250,29 +250,25 @@
   }
 
   // ランダムキー内でランダムにMIDIを選択（12キーのメジャースケール）
-  function randMidiInRandomKey(lo, hi){
-    // lo〜hiの範囲内で、12キーすべてのメジャースケール音を候補にする
+  function randMidiInRandomKey(lo, hi, randomKey){
+    // randomKey：0-11（C, C#, D, D#, E, F, F#, G, G#, A, A#, B）
+    var offsets = [0, 2, 4, 5, 7, 9, 11];  // 度数：1度, 2度, 3度, 4度, 5度, 6度, 7度
+    var keyScaleClasses = [];
+    for(var j = 0; j < offsets.length; j++){
+      keyScaleClasses.push((randomKey + offsets[j]) % 12);
+    }
+    
+    // lo〜hi範囲内で、そのキーのスケールに属する音を集める
     var candidates = [];
     for(var m = lo; m <= hi; m++){
-      var pc = ((m % 12) + 12) % 12; // ピッチクラス（0-11）
-      // ピッチクラスが12キーのいずれかのメジャースケールに含まれているか確認
-      // 各キー k (0-11) のメジャースケールは k, k+2, k+4, k+5, k+7, k+9, k+11 (mod 12)
-      var offsets = [0, 2, 4, 5, 7, 9, 11];
-      var isInSomeKey = false;
-      for(var k = 0; k < 12; k++){
-        for(var j = 0; j < offsets.length; j++){
-          if((k + offsets[j]) % 12 === pc){
-            isInSomeKey = true;
-            break;
-          }
-        }
-        if(isInSomeKey) break;
-      }
-      if(isInSomeKey){
+      var pc = ((m % 12) + 12) % 12;
+      if(keyScaleClasses.indexOf(pc) >= 0){
         candidates.push(m);
       }
     }
-    if(candidates.length === 0) return lo; // フォールバック
+    
+    // ランダムに1つ選ぶ
+    if(candidates.length === 0) return lo;
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
@@ -283,7 +279,8 @@
   var lowMidi = 48, highMidi = 72; // 初期値 C3-C5
   var taskCount = 20;
   var revealNames = true;  // 常に音名を表示
-  var scaleMode = 'chromatic'; // 'chromatic' または 'major'
+  var scaleMode = 'chromatic'; // 'chromatic', 'major', 'random-key'
+  var currentRandomKey = null;  // セッション中のランダムキー（'random-key'時のみ使用）
 
   var isRunning = false;
   var stopRequested = false;
@@ -698,6 +695,12 @@
       setPhase('running');
 
       var actualTaskCount = taskCount === 0 ? Infinity : taskCount;
+      
+      // scaleMode が 'random-key' の場合、セッション全体で使用するキーを決定
+      if(scaleMode === 'random-key'){
+        currentRandomKey = Math.floor(Math.random() * 12);  // 0-11
+      }
+      
       for(var i=0; i<actualTaskCount; i++){
         if(stopRequested) break;
 
@@ -706,7 +709,7 @@
           if(scaleMode === 'major'){
             targetMidi = randMidiInMajor(lowMidi, highMidi);
           } else if(scaleMode === 'random-key'){
-            targetMidi = randMidiInRandomKey(lowMidi, highMidi);
+            targetMidi = randMidiInRandomKey(lowMidi, highMidi, currentRandomKey);
           } else {
             targetMidi = randInt(lowMidi, highMidi);
           }
