@@ -132,6 +132,7 @@
           <select id="scale-select">
             <option value="chromatic">すべての音（シャープ含む）</option>
             <option value="major">Cメジャースケール</option>
+            <option value="random-key">ランダムキー</option>
           </select>
         </div>
         <div class="field">
@@ -151,16 +152,13 @@
             <option value="sawtooth">のこぎり波</option>
             <option value="square">矩形波</option>
             <option value="warm">倍音を重ねた音（ウォーム）</option>
-            <option value="piano">ピアノ</option>
-            <option value="trumpet">トランペット</option>
+            <option value="guitar">ギター風</option>
+            <option value="trumpet">トランペット風</option>
             <option value="random">課題ごとにランダムに切り替える</option>
           </select>
         </div>
       </div>
       <div class="row" style="margin-bottom:0;">
-        <div class="field">
-          <label style="display:flex; align-items:center; gap:6px; flex-direction:row;"><input type="checkbox" id="reveal-toggle"> 結果一覧に音名を表示する</label>
-        </div>
         <div class="field">
           <label for="feedback-select">不正解時のフィードバック</label>
           <select id="feedback-select">
@@ -222,7 +220,7 @@
 
   // ---------- 定数 ----------
   var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  var TIMBRE_VALUES = ['triangle','sawtooth','square','warm','piano','trumpet'];
+  var TIMBRE_VALUES = ['triangle','sawtooth','square','warm','guitar','trumpet'];
   var MIN_MIDI = 36; // C2
   var MAX_MIDI = 84; // C6
   // Cメジャースケール（ピッチクラス内でのオフセット）
@@ -251,13 +249,40 @@
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 
+  // ランダムキー内でランダムにMIDIを選択（12キーのメジャースケール）
+  function randMidiInRandomKey(lo, hi){
+    // lo〜hiの範囲内で、12キーすべてのメジャースケール音を候補にする
+    var candidates = [];
+    for(var m = lo; m <= hi; m++){
+      var pc = ((m % 12) + 12) % 12; // ピッチクラス（0-11）
+      // ピッチクラスが12キーのいずれかのメジャースケールに含まれているか確認
+      // 各キー k (0-11) のメジャースケールは k, k+2, k+4, k+5, k+7, k+9, k+11 (mod 12)
+      var offsets = [0, 2, 4, 5, 7, 9, 11];
+      var isInSomeKey = false;
+      for(var k = 0; k < 12; k++){
+        for(var j = 0; j < offsets.length; j++){
+          if((k + offsets[j]) % 12 === pc){
+            isInSomeKey = true;
+            break;
+          }
+        }
+        if(isInSomeKey) break;
+      }
+      if(isInSomeKey){
+        candidates.push(m);
+      }
+    }
+    if(candidates.length === 0) return lo; // フォールバック
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
   // ---------- 状態 ----------
   var audioCtx = null;
   var tempo = 76;
   var timbre = 'triangle';
   var lowMidi = 48, highMidi = 72; // 初期値 C3-C5
   var taskCount = 20;
-  var revealNames = false;
+  var revealNames = true;  // 常に音名を表示
   var scaleMode = 'chromatic'; // 'chromatic' または 'major'
 
   var isRunning = false;
@@ -278,7 +303,6 @@
   var tempoSlider = document.getElementById('tempo-slider');
   var tempoValue = document.getElementById('tempo-value');
   var timbreSelect = document.getElementById('timbre-select');
-  var revealToggle = document.getElementById('reveal-toggle');
   var feedbackSelect = document.getElementById('feedback-select');
   var scaleSelect = document.getElementById('scale-select');
   var startBtn = document.getElementById('start-btn');
@@ -320,7 +344,6 @@
     tempoValue.textContent = tempo;
   });
   timbreSelect.addEventListener('change', function(){ timbre = timbreSelect.value; });
-  revealToggle.addEventListener('change', function(){ revealNames = revealToggle.checked; });
   scaleSelect.addEventListener('change', function(){ scaleMode = scaleSelect.value; });
 
   function setPhase(p){
@@ -348,8 +371,8 @@
   function applyTimbre(osc, ctx, t){
     if(t === 'warm'){
       osc.setPeriodicWave(getWarmWave(ctx));
-    } else if(t === 'piano' || t === 'trumpet'){
-      // ピアノ・トランペットはplayPrompt内で処理するため、ここではスキップ
+    } else if(t === 'guitar' || t === 'trumpet'){
+      // ギター風・トランペット風はplayPrompt内で処理するため、ここではスキップ
       osc.type = 'sine';
     } else {
       osc.type = (TIMBRE_VALUES.indexOf(t) >= 0) ? t : 'sine';
@@ -363,30 +386,14 @@
     return timbre;
   }
 
-  // ピアノ音再生（複合オシレータ：基本周波数+倍音、強いアタック＋速い減衰＋インハーモニシティ＋打鍵ノイズ）
-  function playPiano(freq, atTime, dur, ctx){
+  // ギター風音再生（複合オシレータ：基本周波数+倍音、強いアタック＋速い減衰＋インハーモニシティ）
+  function playGuitar(freq, atTime, dur, ctx){
     var harmonics = [
       {ratio: 1.0,    amp: 1.0},    // 基本波（ずれなし）
       {ratio: 2.001,  amp: 0.4},    // 2倍音（わずかに高い）
       {ratio: 3.004,  amp: 0.2},    // 3倍音（さらに高い）
       {ratio: 4.009,  amp: 0.1}     // 4倍音（最も高い）
     ];
-    
-    // 打鍵ノイズ（アタック時のみ、短い）
-    var noiseBuffer = ctx.createBufferSource();
-    var noiseAudioBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate); // 50ms
-    var noiseData = noiseAudioBuffer.getChannelData(0);
-    for(var i=0; i<noiseData.length; i++){
-      noiseData[i] = Math.random() * 2 - 1; // ホワイトノイズ生成
-    }
-    noiseBuffer.buffer = noiseAudioBuffer;
-    var noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.15, atTime); // 打鍵ノイズの音量
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, atTime+0.05); // 50msで消える
-    noiseBuffer.connect(noiseGain);
-    noiseGain.connect(ctx.destination);
-    noiseBuffer.start(atTime);
-    noiseBuffer.stop(atTime+0.05);
     
     harmonics.forEach(function(h){
       var osc = ctx.createOscillator();
@@ -437,9 +444,9 @@
   function playPrompt(freq, atTime, dur, useTimbre){
     var ctx = ensureAudioCtx();
     
-    // ピアノ・トランペットは複合オシレータで特別処理
-    if(useTimbre === 'piano'){
-      playPiano(freq, atTime, dur, ctx);
+    // ギター風・トランペット風は複合オシレータで特別処理
+    if(useTimbre === 'guitar'){
+      playGuitar(freq, atTime, dur, ctx);
       return;
     }
     if(useTimbre === 'trumpet'){
@@ -482,8 +489,8 @@
       osc.type = 'square';
       osc.frequency.setValueAtTime(800, now);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.28, now+0.01);
-      gain.gain.setValueAtTime(0.28, now+0.1);
+      gain.gain.exponentialRampToValueAtTime(0.168, now+0.01);  // 0.28 × 0.6 ≈ 0.168
+      gain.gain.setValueAtTime(0.168, now+0.1);
       gain.gain.exponentialRampToValueAtTime(0.0001, now+0.15);
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(now); osc.stop(now+0.15);
@@ -616,7 +623,7 @@
     if(stage === 'prompt'){
       icon.innerHTML = '<span style="color:var(--accent);">♪</span>';
       label.textContent = '出題音を再生中…';
-      sub.textContent = revealNames ? ('(' + noteLabel + ')') : '\u00a0';
+      sub.textContent = '\u00a0';
     } else if(stage === 'wait'){
       icon.innerHTML = '<span class="dot"></span>';
       label.textContent = 'まもなく録音します';
@@ -690,22 +697,29 @@
       var secPerBeat = 60 / tempo;
       setPhase('running');
 
-      for(var i=0; i<taskCount; i++){
+      var actualTaskCount = taskCount === 0 ? Infinity : taskCount;
+      for(var i=0; i<actualTaskCount; i++){
         if(stopRequested) break;
 
         var targetMidi;
         do {
-          targetMidi = (scaleMode === 'major') ? randMidiInMajor(lowMidi, highMidi) : randInt(lowMidi, highMidi);
+          if(scaleMode === 'major'){
+            targetMidi = randMidiInMajor(lowMidi, highMidi);
+          } else if(scaleMode === 'random-key'){
+            targetMidi = randMidiInRandomKey(lowMidi, highMidi);
+          } else {
+            targetMidi = randInt(lowMidi, highMidi);
+          }
         } while(targetMidi === lastTargetMidi && highMidi > lowMidi);
         lastTargetMidi = targetMidi;
 
         var useTimbre = currentTimbreForTask();
         var taskStartCtx = ctx.currentTime + 0.05;
 
-        updateProgressUI(i+1, taskCount, taskResults);
+        updateProgressUI(i+1, taskCount === 0 ? '∞' : taskCount, taskResults);
         var result = await runOneTask(targetMidi, useTimbre, secPerBeat, taskStartCtx);
         taskResults.push(result);
-        updateProgressUI(i+1, taskCount, taskResults);
+        updateProgressUI(i+1, taskCount === 0 ? '∞' : taskCount, taskResults);
       }
 
       sampling = false;
@@ -715,6 +729,10 @@
       if(stopRequested){
         setPhase('idle');
         setStatus('中止しました。');
+      } else if(taskCount === 0){
+        // 無限モードでは統計結果表示は不要
+        setPhase('idle');
+        setStatus('終了しました。');
       } else {
         renderResultScreen();
         setPhase('result');
