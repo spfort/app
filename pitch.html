@@ -201,6 +201,8 @@
             <option value="sawtooth">のこぎり波</option>
             <option value="square">矩形波</option>
             <option value="warm">倍音を重ねた音（ウォーム）</option>
+            <option value="guitar">ギター風</option>
+            <option value="trumpet">トランペット風</option>
           </select>
         </div>
         <div class="field">
@@ -359,7 +361,7 @@
     dottedEighth:    {base:'付点8分',  beats:0.75},
     dottedSixteenth: {base:'付点16分', beats:0.375}
   };
-  var TIMBRE_VALUES = ['sine','triangle','sawtooth','square','warm'];
+  var TIMBRE_VALUES = ['sine','triangle','sawtooth','square','warm','guitar','trumpet'];
 
   // ---------- 状態 ----------
   var rangeLowMidi = 55;  // G3
@@ -936,16 +938,82 @@
     }
     return warmWave;
   }
+  // ギター風音再生（複合オシレータ：基本周波数+倍音）
+  function playGuitar(freq, atTime, dur, ctx){
+    var harmonics = [
+      {ratio: 1.0,    amp: 1.0},    // 基本波
+      {ratio: 2.001,  amp: 0.4},    // 2倍音
+      {ratio: 3.004,  amp: 0.2},    // 3倍音
+      {ratio: 4.009,  amp: 0.1}     // 4倍音
+    ];
+    
+    harmonics.forEach(function(h){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq * h.ratio, atTime);
+      
+      var decay = dur * (0.5 / h.ratio);
+      gain.gain.setValueAtTime(0.0001, atTime);
+      gain.gain.exponentialRampToValueAtTime(0.3 * h.amp, atTime+0.01);
+      gain.gain.setValueAtTime(0.3 * h.amp, atTime + Math.max(0.05, dur-0.12));
+      gain.gain.linearRampToValueAtTime(0.0001, atTime+decay);
+      
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(atTime); osc.stop(atTime+decay+0.02);
+    });
+  }
+
+  // トランペット風音再生（複合オシレータ：基本周波数+倍音、長い余韻）
+  function playTrumpet(freq, atTime, dur, ctx){
+    var harmonics = [
+      {ratio: 1.0,    amp: 1.0},    // 基本波
+      {ratio: 2.001,  amp: 0.4},    // 2倍音
+      {ratio: 3.004,  amp: 0.2},    // 3倍音
+      {ratio: 4.009,  amp: 0.1}     // 4倍音
+    ];
+    
+    harmonics.forEach(function(h){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq * h.ratio, atTime);
+      
+      var decay = dur * 1.5;
+      gain.gain.setValueAtTime(0.0001, atTime);
+      gain.gain.exponentialRampToValueAtTime(0.3 * h.amp, atTime+0.01);
+      gain.gain.setValueAtTime(0.3 * h.amp, atTime + Math.max(0.05, dur-0.12));
+      gain.gain.exponentialRampToValueAtTime(0.0001, atTime+decay);
+      
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(atTime); osc.stop(atTime+decay+0.02);
+    });
+  }
+
   // 本フレーズ・前奏の再生音色を osc に適用する（クリック音(playClick)には適用しない）
   function applyTimbre(osc, ctx){
     if(timbre === 'warm'){
       osc.setPeriodicWave(getWarmWave(ctx));
+    } else if(timbre === 'guitar' || timbre === 'trumpet'){
+      // ギター風・トランペット風はplayTone内で処理するため、ここではスキップ
+      osc.type = 'sine';
     } else {
       osc.type = (TIMBRE_VALUES.indexOf(timbre) >= 0) ? timbre : 'sine';
     }
   }
   function playTone(freq, atTime, dur){
     var ctx = ensureAudioCtx();
+    
+    // ギター風・トランペット風は複合オシレータで特別処理
+    if(timbre === 'guitar'){
+      playGuitar(freq, atTime, dur, ctx);
+      return;
+    }
+    if(timbre === 'trumpet'){
+      playTrumpet(freq, atTime, dur, ctx);
+      return;
+    }
+    
     var osc = ctx.createOscillator();
     var gain = ctx.createGain();
     applyTimbre(osc, ctx);
