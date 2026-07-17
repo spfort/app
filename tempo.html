@@ -156,6 +156,13 @@
     background:transparent;
     margin:0;
     cursor:pointer;
+    /* Allow the browser to handle vertical swipes on this element as native
+       page scrolling (pan-y), instead of immediately capturing the touch as
+       a slider drag. A vertical finger movement now scrolls the settings
+       screen as expected; only a horizontal drag moves the thumb. This is
+       the standard fix for range inputs "stealing" vertical scroll gestures
+       on iOS/Android. */
+    touch-action: pan-y;
   }
   input[type=range]::-webkit-slider-runnable-track{
     height:4px;
