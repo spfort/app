@@ -63,6 +63,7 @@
     align-items:center;
     justify-content:center;
     gap:14px;
+    padding-bottom:180px; /* shifts the centered content upward so the enlarged tap-pad (z-index above this overlay, stays clickable during count-in) doesn't cover the number */
     z-index:20;
     touch-action: none; /* prevent double-tap-to-zoom and other gestures during count-in */
   }
