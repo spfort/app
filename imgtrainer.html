@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>イメージ再生トレーナー</title>
+<style>
+/* Layout: one column — player, status strip, judge pad, then settings / video list / log as quiet panels */
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --fg:#1d2030; --muted:#6a6f86; --line:#dcdfe8;
+  --accent:#3b4bb8; --accent-fg:#ffffff;
+  --silence:#22264a; --silence-fg:#e8e9ff;
+  --ok:#1f8a5b; --warn:#b5651d; --bad:#b03a48; --rec:#d22b2b; --rec-fg:#ffffff;
+  --font:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12131a; --surface:#1b1d27; --fg:#e6e7ef; --muted:#9296ad; --line:#2d3040;
+  --accent:#8592ff; --accent-fg:#10122a; --silence:#0a0b14; --silence-fg:#c9ccff;
+  --ok:#4cc38a; --warn:#e3a15a; --bad:#ec6f7f; --rec:#e5484d; --rec-fg:#ffffff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12131a; --surface:#1b1d27; --fg:#e6e7ef; --muted:#9296ad; --line:#2d3040;
+  --accent:#8592ff; --accent-fg:#10122a; --silence:#0a0b14; --silence-fg:#c9ccff;
+  --ok:#4cc38a; --warn:#e3a15a; --bad:#ec6f7f; --rec:#e5484d; --rec-fg:#ffffff; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px;
+  -webkit-text-size-adjust:100%}
+main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-size:20px;margin:0;letter-spacing:.02em}
+h2{font-size:13px;margin:0 0 10px;color:var(--muted);letter-spacing:.08em;font-weight:600}
+.sub{color:var(--muted);font-size:13px;margin:2px 0 0}
+.warnbox{background:color-mix(in srgb,var(--warn) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);border-radius:8px;padding:10px 12px;font-size:13px}
+.stage{position:fixed;left:0;bottom:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none}
+.stage iframe,#player{width:320px;height:180px;border:0}
+.stage.show{position:relative;width:100%;height:auto;aspect-ratio:16/9;max-width:100%;opacity:1;pointer-events:auto;border-radius:10px;background:#000}
+.stage.show iframe,.stage.show #player{position:absolute;inset:0;width:100%;height:100%}
+.now{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--silence-fg);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+.status{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 16px;transition:background .3s,color .3s}
+.status.silent{background:var(--silence);color:var(--silence-fg);border-color:var(--silence)}
+.status.silent .chip{display:none}
+.status-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.phase{display:flex;align-items:center;gap:10px;font-weight:700;font-size:20px}
+.chip{display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--muted)}
+.phase[data-p="audible"] .chip{background:var(--ok)}
+@media (prefers-reduced-motion:reduce){.status{transition:none}}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:9px 14px;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:var(--accent)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:700}
+button:disabled{opacity:.45;cursor:default}
+button.rec{background:var(--rec);color:var(--rec-fg);border-color:var(--rec);font-weight:700}
+button.rec:hover{border-color:var(--rec);filter:brightness(1.08)}
+button.rec.running{background:transparent;color:var(--rec)}
+.judge{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.judge button{padding:14px 6px;font-size:14px;line-height:1.3;display:flex;flex-direction:column;align-items:center;gap:2px}
+.judge kbd{font:11px var(--mono);color:var(--muted)}
+.judge.on button{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.judge-hint{font-size:13px;color:var(--muted);margin:0 0 8px}
+.judge.on + .judge-hint,.judge-hint.on{color:var(--accent);font-weight:600}
+@media (max-width:480px){.judge{grid-template-columns:repeat(2,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+label{font-size:13px;color:var(--muted);display:block}
+.range{display:flex;align-items:center;gap:6px;margin-top:4px;color:var(--fg)}
+input[type=number]{width:72px;font:inherit;font-variant-numeric:tabular-nums;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+input[type=text]{flex:1;min-width:0;font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.check{display:flex;gap:8px;align-items:flex-start;color:var(--fg);font-size:14px;margin-top:6px}
+.check input{margin-top:4px}
+.vlist{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.vlist li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px}
+.vlist li.cur{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.vlist .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.vlist .x{padding:2px 8px;font-size:13px;color:var(--muted)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:10px}
+.stats b{display:block;font-size:20px;color:var(--fg);font-variant-numeric:tabular-nums}
+.tablewrap{overflow-x:auto;max-height:320px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface)}
+.j-match{color:var(--ok);font-weight:700}.j-early,.j-late{color:var(--warn)}.j-lost{color:var(--bad)}.j-none{color:var(--muted)}
+.mono{font-family:var(--mono)}
+.small{font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>イメージ再生トレーナー</h1>
+    <p class="sub">YouTubeの音をランダムに消します。無音の間も頭の中で曲を鳴らし続け、音が戻った瞬間にずれを判定してください。</p>
+  </header>
+
+  <div id="fileWarn" class="warnbox" hidden>このファイルをPCから直接開いています。YouTubeは直接開いたファイル内での再生を拒否することがあります（エラー153など）。GitHub Pages に置くか、フォルダで <span class="mono">python3 -m http.server</span> を実行して <span class="mono">http://localhost:8000/</span> から開いてください。</div>
+
+  <div class="stage show" id="stage"><div id="player"></div></div>
+
+  <div class="status" id="status">
+    <div class="status-main">
+      <div class="phase" id="phase" data-p="idle"><span class="chip"></span><span class="dot" id="dot" hidden></span><span id="phaseText">待機中</span></div>
+      <div class="now" id="nowTitle">下の「動画リスト」にYouTubeのURLを追加してください</div>
+    </div>
+    <div class="row">
+      <button id="btnTrain" class="rec" disabled>トレーニング開始</button>
+    </div>
+  </div>
+
+  <section>
+    <div class="judge" id="judge">
+      <button data-j="early">脳内が先行<kbd>1</kbd></button>
+      <button data-j="match">一致<kbd>2</kbd></button>
+      <button data-j="late">脳内が遅れ<kbd>3</kbd></button>
+      <button data-j="lost">見失った<kbd>4</kbd></button>
+    </div>
+    <p class="judge-hint" id="judgeHint" style="margin-top:8px">音が戻ったら、頭の中の位置と実際の音源を比べて判定します。</p>
+  </section>
+
+  <section class="panel">
+    <h2>動画リスト</h2>
+    <div class="row">
+      <input type="text" id="urlIn" placeholder="YouTubeのURL（複数行の貼り付けも可）" aria-label="YouTubeのURL">
+      <button id="btnAdd">追加</button>
+    </div>
+    <ul class="vlist" id="vlist"></ul>
+    <div class="row" style="margin-top:8px">
+      <button id="btnNext" disabled>次の曲</button>
+      <button id="btnRand" disabled>ランダムな曲</button>
+    </div>
+    <label class="check"><input type="checkbox" id="showPlayer"> 動画を表示する（オフにすると動画欄を消して音だけにします）</label>
+  </section>
+
+  <section class="panel">
+    <h2>設定</h2>
+    <div class="grid">
+      <div>
+        <label for="audMin">音が鳴る長さ（秒）</label>
+        <div class="range"><input type="number" id="audMin" min="1" step="0.5"> 〜 <input type="number" id="audMax" min="1" step="0.5"></div>
+      </div>
+      <div>
+        <label for="muteMin">無音の長さ（秒）</label>
+        <div class="range"><input type="number" id="muteMin" min="0.5" step="0.5"> 〜 <input type="number" id="muteMax" min="0.5" step="0.5"></div>
+        <div class="small" id="effMute"></div>
+      </div>
+      <div>
+        <label for="fadeOut">フェードアウト／フェードイン（秒）</label>
+        <div class="range"><input type="number" id="fadeOut" min="0" max="5" step="0.1"> ／ <input type="number" id="fadeIn" min="0" max="5" step="0.1"></div>
+        <div class="small">iPhone・iPad では音量をページから変えられないため、フェードせず瞬時に切り替わります。</div>
+      </div>
+      <div>
+        <label>無音の間の音量</label>
+        <label class="check"><input type="radio" name="floorMode" id="floorOff" value="off"> 完全に消す</label>
+        <label class="check"><input type="radio" name="floorMode" id="floorOn" value="on"> 微弱音 <input type="number" id="floorLv" min="1" max="30" step="1" aria-label="残す音量（%）"> %</label>
+        <div class="small" id="floorNote">完全な無音で続けるのが難しいときの補助です。聞こえるか聞こえないかの大きさに調整してください。</div>
+      </div>
+      <div>
+        <label for="intro">曲の冒頭で無音にしない時間（秒）</label>
+        <div class="range"><input type="number" id="intro" min="0" step="1"></div>
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="adaptive"> 適応モード：「一致」で無音を長く、ずれたら短くする</label>
+    <label class="check"><input type="checkbox" id="autoNext"> 曲が終わったら次の曲へ進み、続けてトレーニングする</label>
+  </section>
+
+  <section class="panel">
+    <h2>記録</h2>
+    <div class="stats" id="stats"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>日時</th><th>曲</th><th>位置</th><th>無音</th><th>音量</th><th>判定</th></tr></thead>
+        <tbody id="log"></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="btnClearConfirm">記録を消去</button>
+      <span id="clearAsk" hidden>本当に消去しますか？ <button id="btnClear">消去する</button> <button id="btnClearNo">やめる</button></span>
+    </div>
+  </section>
+  <p class="small">キー操作：1〜4 で判定、スペースで一時停止／再開。動画の埋め込みが禁止されている曲は再生できません。</p>
+</main>
+
+<script>
+(function(){
+'use strict';
+var $=function(id){return document.getElementById(id)};
+var store={
+  get:function(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},
+  set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+var JLABEL={early:'脳内が先行',match:'一致',late:'脳内が遅れ',lost:'見失った',none:'未回答'};
+
+if(location.protocol==='file:') $('fileWarn').hidden=false;
+
+/* ---------- settings ---------- */
+var DEF={v:3,audMin:6,audMax:15,muteMin:2,muteMax:4,fadeOut:0.8,fadeIn:0.3,intro:30,showPlayer:true,floorOn:false,floorLv:4,fadeOutQ:0.7,fadeInQ:0.7,adaptive:false,autoNext:true,k:1};
+var saved=store.get('imt.cfg',{});
+var oldV=saved.v||1;
+if(oldV<3){delete saved.muteMin;delete saved.muteMax;delete saved.k;saved.v=3}
+var cfg=Object.assign({},DEF,saved);
+['audMin','audMax','muteMin','muteMax','fadeOut','fadeIn','intro'].forEach(function(id){
+  $(id).value=cfg[id];
+  $(id).addEventListener('change',function(){
+    var v=parseFloat($(id).value), isFade=/^fade/.test(id);
+    if(isFade){ if(!(v>=0)) v=DEF[fadeKey(id)]; v=Math.min(5,v); $(id).value=v; cfg[fadeKey(id)]=v; saveCfg(); return; }
+    else if(id==='intro'){ if(!(v>=0)) v=DEF[id]; }
+    else if(!(v>0)) v=DEF[id];
+    $(id).value=v;
+    cfg[id]=v;
+    if(cfg.audMax<cfg.audMin) cfg.audMax=cfg.audMin;
+    if(cfg.muteMax<cfg.muteMin) cfg.muteMax=cfg.muteMin;
+    $('audMax').value=cfg.audMax; $('muteMax').value=cfg.muteMax;
+    saveCfg(); renderEff();
+  });
+});
+var IOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+$('floorOn').checked=cfg.floorOn; $('floorOff').checked=!cfg.floorOn; $('floorLv').value=cfg.floorLv;
+if(IOS){ $('floorOn').disabled=true; $('floorLv').disabled=true; $('floorOff').checked=true; cfg.floorOn=false;
+  $('floorNote').textContent='iPhone・iPad ではページから音量を変えられないため、このモードは使えません（PC・Androidで使えます）。'; }
+['floorOn','floorOff'].forEach(function(id){$(id).addEventListener('change',function(){cfg.floorOn=$('floorOn').checked;saveCfg();showFades();renderLog()})});
+function fadeKey(id){return floorNow()>0?id+'Q':id}           // faint-sound mode keeps its own fade times
+function fo(){return cfg[fadeKey('fadeOut')]}
+function fi(){return cfg[fadeKey('fadeIn')]}
+function showFades(){$('fadeOut').value=fo();$('fadeIn').value=fi()}
+showFades();
+$('floorLv').addEventListener('change',function(){
+  var v=Math.round(parseFloat($('floorLv').value)); if(!(v>=1)) v=DEF.floorLv; v=Math.min(30,v);
+  $('floorLv').value=v; cfg.floorLv=v; saveCfg();
+});
+function floorNow(){return cfg.floorOn&&!IOS?cfg.floorLv/100:0}
+$('showPlayer').checked=cfg.showPlayer;
+$('stage').classList.toggle('show',cfg.showPlayer);
+$('showPlayer').addEventListener('change',function(){cfg.showPlayer=$('showPlayer').checked;$('stage').classList.toggle('show',cfg.showPlayer);saveCfg()});
+['adaptive','autoNext'].forEach(function(id){
+  $(id).checked=!!cfg[id];
+  $(id).addEventListener('change',function(){
+    cfg[id]=$(id).checked;
+    if(id==='adaptive'&&!cfg.adaptive) cfg.k=1;
+    saveCfg(); renderEff();
+  });
+});
+function saveCfg(){store.set('imt.cfg',cfg)}
+function kNow(){return cfg.adaptive?cfg.k:1}
+function renderEff(){
+  $('effMute').textContent=cfg.adaptive?('現在の無音：'+(cfg.muteMin*cfg.k).toFixed(1)+'〜'+(cfg.muteMax*cfg.k).toFixed(1)+' 秒（倍率 ×'+cfg.k.toFixed(2)+'）'):'';
+}
+function rnd(a,b){return a+Math.random()*(b-a)}
+
+/* ---------- video list ---------- */
+var DEFAULT_VIDEO='HaA3YZ6QdJU';
+var list=store.get('imt.list',[]);
+if(oldV<3&&!list.some(function(x){return x.id===DEFAULT_VIDEO})){   // add the default song once
+  list.unshift({id:DEFAULT_VIDEO,title:''});
+}
+store.set('imt.list',list); store.set('imt.cfg',cfg);
+var cur=-1;
+function parseId(s){
+  s=s.trim(); if(!s) return null;
+  if(/^[\w-]{11}$/.test(s)) return s;
+  try{
+    var u=new URL(s);
+    if(/youtu\.be$/.test(u.hostname)) return u.pathname.slice(1,12);
+    var v=u.searchParams.get('v'); if(v&&/^[\w-]{11}$/.test(v)) return v;
+    var m=u.pathname.match(/\/(embed|shorts|live|v)\/([\w-]{11})/); if(m) return m[2];
+  }catch(e){}
+  return null;
+}
+function addUrls(){
+  var lines=$('urlIn').value.split(/[\s,]+/), added=0, bad=0;
+  lines.forEach(function(l){
+    if(!l.trim()) return;
+    var id=parseId(l);
+    if(!id){bad++;return}
+    if(list.some(function(x){return x.id===id})) return;
+    list.push({id:id,title:''}); added++;
+  });
+  store.set('imt.list',list);
+  $('urlIn').value='';
+  renderList();
+  if(bad) setPhaseText('URLを読み取れなかったものが '+bad+' 件ありました');
+  if(added&&cur<0) loadVideo(list.length-added);
+}
+$('btnAdd').addEventListener('click',addUrls);
+$('urlIn').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();addUrls()}});
+function renderList(){
+  var ul=$('vlist'); ul.innerHTML='';
+  list.forEach(function(v,i){
+    var li=document.createElement('li'); if(i===cur) li.className='cur';
+    var t=document.createElement('span'); t.className='t'; t.textContent=(i===cur?'▶ ':'')+(v.title||v.id);
+    t.title=v.title||v.id; t.addEventListener('click',function(){loadVideo(i)});
+    var x=document.createElement('button'); x.className='x'; x.textContent='削除'; x.setAttribute('aria-label','リストから削除');
+    x.addEventListener('click',function(){
+      list.splice(i,1); if(i===cur) cur=-1; else if(i<cur) cur--;
+      store.set('imt.list',list); renderList();
+    });
+    li.appendChild(t); li.appendChild(x); ul.appendChild(li);
+  });
+  $('btnNext').disabled=$('btnRand').disabled=list.length<2;
+}
+$('btnNext').addEventListener('click',function(){if(list.length)loadVideo((cur+1)%list.length,S.training)});
+$('btnRand').addEventListener('click',function(){
+  if(list.length<2) return; var i; do{i=Math.floor(Math.random()*list.length)}while(i===cur);
+  loadVideo(i,S.training);
+});
+
+/* ---------- player ---------- */
+var player=null, ready=false, pendingLoad=null, apiReady=false;
+window.onYouTubeIframeAPIReady=function(){apiReady=true; if(pendingLoad) loadVideo(pendingLoad.i,pendingLoad.auto)};
+(function(){var s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.appendChild(s)})();
+
+function loadVideo(i,autoTrain){
+  if(!list[i]) return;
+  if(!apiReady){pendingLoad={i:i,auto:autoTrain};return}
+  if(S.training) stopTraining(true);
+  cur=i; renderList(); renderNow();
+  var id=list[i].id;
+  if(!player){
+    var pv={playsinline:1,rel:0};
+    if(/^https?:$/.test(location.protocol)) pv.origin=location.origin;
+    player=new YT.Player('player',{width:'100%',height:'100%',videoId:id,playerVars:pv,
+      events:{onReady:function(){ready=true;enableControls();if(autoTrain)startTraining()},
+              onStateChange:onState,onError:onErr}});
+  }else{
+    player.unMute();
+    if(autoTrain){player.loadVideoById(id);startTraining()} else player.cueVideoById(id);
+  }
+  setPhaseText('待機中');
+}
+function enableControls(){$('btnTrain').disabled=false}
+function onState(e){
+  var st=e.data;
+  if(st===YT.PlayerState.PLAYING&&cur>=0&&!list[cur].title){
+    try{var d=player.getVideoData(); if(d&&d.title){list[cur].title=d.title;store.set('imt.list',list);renderList();renderNow()}}catch(_){}
+  }
+  if(st===YT.PlayerState.ENDED&&S.training){
+    if(inGap()) endMute(false);
+    if(cfg.autoNext&&list.length>1){ loadVideo((cur+1)%list.length,true) }
+    else stopTraining();
+  }
+}
+function onErr(e){
+  var c=e.data, msg='再生エラー（'+c+'）';
+  if(c===101||c===150) msg='この動画は埋め込み再生が許可されていません。リストから外してください';
+  else if(c===153) msg='YouTubeが再生を拒否しました。http(s):// のページとして開いてください';
+  else if(c===100) msg='動画が見つかりません（削除または非公開）';
+  else if(c===2) msg='動画IDが正しくありません';
+  if(S.training) stopTraining();
+  setPhaseText(msg);
+}
+
+/* ---------- training engine (scheduled on video time, not wall clock) ---------- */
+var S={floor:0,training:false,phase:'idle',next:null,lastT:null,lastWall:0,muteStart:0,fadeStart:0,baseVol:100,pending:null};
+var trials=store.get('imt.trials',[]);
+var timer=null;
+
+function setPhase(p,text){
+  $('phase').dataset.p=p;$('phaseText').textContent=text;
+  var silent=p==='muted'; $('status').classList.toggle('silent',silent); $('dot').hidden=!silent;
+}
+function renderNow(){$('nowTitle').textContent=cur>=0?('♪ '+(list[cur].title||list[cur].id)):'下の「動画リスト」にYouTubeのURLを追加してください'}
+function setPhaseText(t){$('phaseText').textContent=t}
+
+function startTraining(){
+  if(!player||!ready) return;
+  S.training=true; S.phase='audible'; S.next=null; S.lastT=null;
+  player.unMute(); player.playVideo();
+  $('btnTrain').textContent='トレーニング停止'; $('btnTrain').classList.add('running');
+  setPhase('audible','再生中');
+  if(!timer) timer=setInterval(tick,30);
+}
+function stopTraining(silent){
+  if(inGap()) endMute(false);
+  S.training=false; S.phase='idle';
+  if(player&&ready) player.unMute();
+  $('btnTrain').textContent='トレーニング開始'; $('btnTrain').classList.remove('running');
+  if(!silent) setPhase('idle','停止中');
+  if(timer){clearInterval(timer);timer=null}
+}
+$('btnTrain').addEventListener('click',function(){
+  if(S.training){ stopTraining(); try{player.pauseVideo()}catch(e){} }
+  else startTraining();
+});
+function togglePause(){
+  if(!player||!ready) return;
+  var st=player.getPlayerState();
+  if(st===YT.PlayerState.PLAYING||st===YT.PlayerState.BUFFERING) player.pauseVideo(); else player.playVideo();
+}
+
+/* Phases: audible → fadeout → muted → fadein → audible.
+   Fades are driven by video time in tick(), so they stay in step with buffering and playback rate. */
+function planNext(t){                       // next gap start, never inside the intro
+  var n=t+rnd(cfg.audMin,cfg.audMax);
+  return n<cfg.intro ? cfg.intro+Math.random()*2 : n;
+}
+function inGap(){return S.phase==='fadeout'||S.phase==='muted'||S.phase==='fadein'}
+function ease(x){x=Math.min(1,Math.max(0,x));return 0.5-0.5*Math.cos(Math.PI*x)}
+function setGain(g){ try{player.setVolume(Math.round(S.baseVol*g))}catch(e){} }
+
+function tick(){
+  if(!S.training||!player||!ready) return;
+  var now=performance.now();
+  if(player.getPlayerState()!==YT.PlayerState.PLAYING){S.lastWall=now;return}
+  var t=player.getCurrentTime(), rate=player.getPlaybackRate()||1, dur=player.getDuration()||Infinity;
+  if(S.lastT!==null){
+    var expected=S.lastT+(now-S.lastWall)/1000*rate;
+    if(Math.abs(t-expected)>1.2){            // user seeked: cancel the current gap and replan
+      if(inGap()) endMute(false);
+      S.next=planNext(t);
+    }
+  }
+  S.lastT=t; S.lastWall=now;
+  if(S.next===null) S.next=planNext(t);
+
+  if(S.phase==='audible'){
+    if(t>=S.next){
+      var m=rnd(cfg.muteMin,cfg.muteMax)*kNow();
+      if(dur-t>m+fo()+fi()+1.5) beginMute(t,m); else S.next=Infinity;
+    }
+  }else if(S.phase==='fadeout'){
+    var x=fo()>0?(t-S.fadeStart)/fo():1;
+    if(x>=1){ if(S.floor>0) setGain(S.floor); else player.mute(); S.phase='muted'; }
+    else setGain(1-(1-S.floor)*ease(x));
+  }else if(S.phase==='muted'){
+    if(t>=S.next) beginFadeIn(t);
+  }else if(S.phase==='fadein'){
+    var y=fi()>0?(t-S.fadeStart)/fi():1;
+    if(y>=1){ setGain(1); S.phase='audible'; S.next=planNext(t); }
+    else setGain(S.floor+(1-S.floor)*ease(y));
+  }
+}
+function beginMute(t,m){
+  if(S.pending) record('none');
+  try{var v=player.getVolume(); if(v>0) S.baseVol=v;}catch(e){}
+  S.floor=floorNow();                        // 0 = full mute, otherwise the quiet level kept during the gap
+  S.phase='fadeout'; S.muteStart=t; S.fadeStart=t;
+  S.next=t+fo()+m;                    // the quiet part lasts m seconds
+  if(fo()<=0){ if(S.floor>0) setGain(S.floor); else player.mute(); S.phase='muted'; }
+  setPhase('muted',S.floor>0?'微弱音 — 頭の中で続けて':'無音 — 頭の中で続けて');
+  $('judge').classList.remove('on'); $('judgeHint').classList.remove('on');
+  $('judgeHint').textContent='音が戻ったら判定します。';
+}
+function beginFadeIn(t){
+  if(fi()>0){ setGain(S.floor); player.unMute(); S.phase='fadein'; S.fadeStart=t; }
+  else { setGain(1); player.unMute(); S.phase='audible'; S.next=planNext(t); }
+  // gap length = from the start of the fade-out to the start of the fade-in
+  S.pending={at:S.muteStart,len:t-S.muteStart,lv:Math.round(S.floor*100),vid:cur>=0?list[cur].id:'',title:cur>=0?(list[cur].title||list[cur].id):''};
+  $('judge').classList.add('on'); $('judgeHint').classList.add('on');
+  $('judgeHint').textContent='今の '+S.pending.len.toFixed(1)+' 秒の無音はどうでしたか？';
+  setPhase('audible','再生中');
+}
+function endMute(){                          // abort a gap (seek, stop, song end): restore sound at once
+  setGain(1); player.unMute();
+  S.phase=S.training?'audible':'idle';
+  if(S.training) setPhase('audible','再生中');
+}
+function record(j){
+  var p=S.pending; if(!p) return;
+  trials.push({d:Date.now(),vid:p.vid,title:p.title,at:p.at,len:+p.len.toFixed(2),lv:p.lv||0,j:j});
+  if(trials.length>2000) trials=trials.slice(-2000);
+  store.set('imt.trials',trials);
+  if(cfg.adaptive&&j!=='none'){
+    var f={match:1.15,early:1/1.1,late:1/1.1,lost:1/1.25}[j];
+    cfg.k=Math.min(5,Math.max(0.3,cfg.k*f)); saveCfg(); renderEff();
+  }
+  S.pending=null;
+  $('judge').classList.remove('on'); $('judgeHint').classList.remove('on');
+  $('judgeHint').textContent=j==='none'?'前回は未回答として記録しました。':('「'+JLABEL[j]+'」で記録しました。');
+  renderLog();
+}
+Array.prototype.forEach.call(document.querySelectorAll('#judge button'),function(b){
+  b.addEventListener('click',function(){record(b.dataset.j)});
+});
+document.addEventListener('keydown',function(e){
+  if(e.target.tagName==='INPUT') return;
+  var map={'1':'early','2':'match','3':'late','4':'lost'};
+  if(map[e.key]){record(map[e.key]);e.preventDefault()}
+  else if(e.key===' '){togglePause();e.preventDefault()}
+});
+
+/* ---------- log ---------- */
+function fmtT(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function fmtD(ms){var d=new Date(ms);return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')}
+function median(a){if(!a.length)return null;a=a.slice().sort(function(x,y){return x-y});var m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2}
+function renderLog(){
+  var tb=$('log'); tb.innerHTML='';
+  for(var i=trials.length-1;i>=0&&i>=trials.length-300;i--){
+    var r=trials[i], tr=document.createElement('tr');
+    [String(i+1),fmtD(r.d),r.title||r.vid,fmtT(r.at),r.len.toFixed(1)+' 秒',r.lv?r.lv+'%':'消音',JLABEL[r.j]].forEach(function(v,ci){
+      var td=document.createElement('td'); td.textContent=v;
+      if(ci===2){td.style.maxWidth='14em';td.style.overflow='hidden';td.style.textOverflow='ellipsis'}
+      if(ci===6) td.className='j-'+r.j;
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  }
+  var quiet=floorNow()>0;   // stats follow the mode currently selected
+  var ans=trials.filter(function(r){return r.j!=='none'&&(!!r.lv)===quiet});
+  var recent=ans.slice(-20);
+  var match=ans.filter(function(r){return r.j==='match'});
+  var rm=recent.filter(function(r){return r.j==='match'}).length;
+  var early=ans.filter(function(r){return r.j==='early'}).length, late=ans.filter(function(r){return r.j==='late'}).length;
+  var mm=median(match.map(function(r){return r.len}));
+  $('stats').innerHTML='';
+  var mode=document.createElement('div');var mb=document.createElement('b');mb.textContent=quiet?'微弱音':'完全消音';mode.appendChild(mb);mode.appendChild(document.createTextNode('の集計'));$('stats').appendChild(mode);
+  [['回答数',String(ans.length)],
+   ['一致率（全体）',ans.length?Math.round(match.length/ans.length*100)+'%':'—'],
+   ['一致率（直近20）',recent.length?Math.round(rm/recent.length*100)+'%':'—'],
+   ['一致した無音の中央値',mm!==null?mm.toFixed(1)+' 秒':'—'],
+   ['先行 : 遅れ',ans.length?early+' : '+late:'—']
+  ].forEach(function(p){var d=document.createElement('div');var b=document.createElement('b');b.textContent=p[1];d.appendChild(b);d.appendChild(document.createTextNode(p[0]));$('stats').appendChild(d)});
+}
+$('btnClearConfirm').addEventListener('click',function(){$('clearAsk').hidden=false});
+$('btnClearNo').addEventListener('click',function(){$('clearAsk').hidden=true});
+$('btnClear').addEventListener('click',function(){trials=[];store.set('imt.trials',trials);$('clearAsk').hidden=true;renderLog()});
+
+/* ---------- init ---------- */
+renderEff(); renderList(); renderLog();
+if(list.length) loadVideo(0);
+})();
+</script>
+</body>
+</html>
