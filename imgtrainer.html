@@ -195,10 +195,12 @@ var JLABEL={early:'脳内が先行',match:'一致',late:'脳内が遅れ',lost:'
 if(location.protocol==='file:') $('fileWarn').hidden=false;
 
 /* ---------- settings ---------- */
-var DEF={v:3,audMin:6,audMax:15,muteMin:2,muteMax:4,fadeOut:0.8,fadeIn:0.3,intro:30,showPlayer:true,floorOn:false,floorLv:4,fadeOutQ:0.7,fadeInQ:0.7,adaptive:false,autoNext:true,k:1};
+var DEF={v:4,audMin:6,audMax:15,muteMin:2,muteMax:4,fadeOut:0.8,fadeIn:0.3,intro:30,showPlayer:true,floorOn:false,floorLv:4,fadeOutQ:0.7,fadeInQ:0.7,adaptive:true,autoNext:true,k:1};
 var saved=store.get('imt.cfg',{});
 var oldV=saved.v||1;
-if(oldV<3){delete saved.muteMin;delete saved.muteMax;delete saved.k;saved.v=3}
+if(oldV<3){delete saved.muteMin;delete saved.muteMax;delete saved.k}
+if(oldV<4){saved.adaptive=true;saved.k=1}   // adaptive mode on by default from v4
+saved.v=4;
 var cfg=Object.assign({},DEF,saved);
 ['audMin','audMax','muteMin','muteMax','fadeOut','fadeIn','intro'].forEach(function(id){
   $(id).value=cfg[id];
