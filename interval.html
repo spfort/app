@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音程当てトレーナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=Red+Hat+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* layout: one phone-width column — status bar, note card, 2x6 answer grid, transport row */
+:root{
+  --bg:#e9edf2;
+  --panel:#f8fafc;
+  --ink:#16222e;
+  --muted:#5d6b79;
+  --line:#c9d2dc;
+  --key:#23435f;        /* answer buttons */
+  --key-ink:#f3f7fb;
+  --brass:#a8741a;      /* accent */
+  --good:#2f8a4c;
+  --bad:#b8372c;
+  --font-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",Meiryo,sans-serif;
+  --font-mono:"Red Hat Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10171e; --panel:#18222c; --ink:#e6edf3; --muted:#93a1ae; --line:#2c3a47;
+    --key:#2f5878; --key-ink:#f3f7fb; --brass:#e0aa4a; --good:#4cae6c; --bad:#dc5b4e;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10171e; --panel:#18222c; --ink:#e6edf3; --muted:#93a1ae; --line:#2c3a47;
+  --key:#2f5878; --key-ink:#f3f7fb; --brass:#e0aa4a; --good:#4cae6c; --bad:#dc5b4e;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--font-body);font-weight:500;
+  -webkit-text-size-adjust:100%;touch-action:manipulation;
+}
+button{font:inherit;color:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
+button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
+.app{
+  max-width:520px;margin:0 auto;min-height:100%;padding:14px 16px 24px;
+  display:flex;flex-direction:column;gap:14px;
+}
+.status{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  border-bottom:2px solid var(--ink);padding-bottom:8px;
+}
+.status h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.04em}
+.status .nums{font-family:var(--font-mono);font-size:14px;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.status .nums b{color:var(--ink)}
+
+.settings{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;font-size:13px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:transparent;padding:8px 12px;font-size:14px;color:var(--muted);min-height:38px}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:700}
+.setgroup{display:flex;align-items:center;gap:8px}
+.setgroup[hidden]{display:none}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:16px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+}
+.msg{font-size:18px;font-weight:700;min-height:1.5em;text-wrap:balance}
+.msg.good{color:var(--good)} .msg.bad{color:var(--bad)}
+.notes{display:flex;align-items:baseline;gap:14px;font-family:var(--font-mono);font-weight:700;line-height:1.1}
+.notes .lowlabel{font-family:var(--font-body);font-size:12px;color:var(--muted);font-weight:500}
+.notes .n{font-size:54px;letter-spacing:-.02em}
+.notes .dash{font-size:30px;color:var(--muted)}
+.notes .q{color:var(--brass)}
+.hint{font-size:13px;color:var(--muted);min-height:1.4em}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid button{
+  border:0;border-radius:8px;background:var(--key);color:var(--key-ink);
+  font-size:19px;font-weight:700;min-height:54px;padding:6px;
+  transition:background-color .12s, transform .06s;
+}
+.grid button:active{transform:scale(.98)}
+.grid button:disabled{opacity:.45;cursor:default}
+.grid button.is-good{background:var(--good);color:#fff;opacity:1}
+.grid button.is-bad{background:var(--bad);color:#fff;opacity:1}
+.grid.listen button:not(.is-good):not(.is-bad){background:transparent;color:var(--ink);box-shadow:inset 0 0 0 2px var(--key)}
+
+.transport{display:flex;gap:8px}
+.transport button{
+  flex:1;min-height:52px;border-radius:8px;font-size:16px;font-weight:700;
+  background:var(--panel);border:1px solid var(--line);
+}
+.transport button.primary{background:var(--brass);border-color:var(--brass);color:#fff}
+.transport button:disabled{opacity:.4;cursor:default}
+.transport .quit{flex:0 0 auto;padding:0 14px;font-weight:500;color:var(--muted)}
+
+.result{width:100%;border-collapse:collapse;font-size:15px;font-variant-numeric:tabular-nums}
+.result td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:left}
+.result td:last-child{text-align:right;font-family:var(--font-mono)}
+.result tr.miss td{color:var(--bad);font-weight:700}
+.score{font-family:var(--font-mono);font-size:54px;font-weight:700;line-height:1.1}
+.score small{font-size:22px;color:var(--muted)}
+[hidden]{display:none !important}
+@media (prefers-reduced-motion: reduce){.grid button{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="status">
+    <h1>音程当てトレーナー</h1>
+    <div class="nums" id="nums">全20問</div>
+  </header>
+
+  <div class="settings">
+    <div class="setgroup">
+      <span>鳴らし方</span>
+      <div class="seg" role="group" aria-label="鳴らし方">
+        <button type="button" id="mode-seq" data-mode="seq" aria-pressed="true">連続</button>
+        <button type="button" id="mode-harm" data-mode="harm" aria-pressed="false">同時</button>
+      </div>
+    </div>
+    <div class="setgroup" id="dir-group">
+      <span>順番</span>
+      <div class="seg" role="group" aria-label="連続再生の順番">
+        <button type="button" id="dir-up" data-dir="up" aria-pressed="true">上行</button>
+        <button type="button" id="dir-down" data-dir="down" aria-pressed="false">下行</button>
+        <button type="button" id="dir-rand" data-dir="rand" aria-pressed="false">ランダム</button>
+      </div>
+    </div>
+  </div>
+
+  <section class="card" id="card">
+    <div class="msg" id="msg">2つの音の音程を当ててください</div>
+    <div class="notes" id="notes">
+      <span class="lowlabel">低い音</span><span class="n">C3</span><span class="dash">–</span><span class="n q">?</span>
+    </div>
+    <div class="hint" id="hint">音域 C3〜C5、音程は1オクターブ以内。全20問で12種類すべて出題します。</div>
+    <table class="result" id="result" hidden><tbody id="result-body"></tbody></table>
+  </section>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="transport">
+    <button type="button" id="btn-replay" disabled>もう一度聞く</button>
+    <button type="button" id="btn-next" class="primary">はじめる</button>
+    <button type="button" id="btn-quit" class="quit" hidden>やめる</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var INTERVALS = ['短2度','長2度','短3度','長3度','完全4度','トライトーン','完全5度','短6度','長6度','短7度','長7度','オクターブ'];
+  var NOTE_NAMES = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+  var LOW = 48, HIGH = 72;      // C3〜C5
+  var TOTAL = 20, TONE_DUR = 1.0;
+
+  var $ = function(id){ return document.getElementById(id); };
+  var grid = $('grid'), msg = $('msg'), notes = $('notes'), hint = $('hint'), nums = $('nums');
+  var btnNext = $('btn-next'), btnReplay = $('btn-replay'), btnQuit = $('btn-quit');
+  var resultTable = $('result'), resultBody = $('result-body');
+
+  var mode = 'seq', dir = 'up';
+  try{
+    mode = localStorage.getItem('ontei.mode') || mode;
+    dir = localStorage.getItem('ontei.dir') || dir;
+  }catch(e){}
+  if(mode !== 'seq' && mode !== 'harm') mode = 'seq';
+  if(['up','down','rand'].indexOf(dir) < 0) dir = 'up';
+
+  var questions = [], idx = -1, correct = 0, answered = 0;
+  var phase = 'idle';           // idle | answer | correct | wrong | done
+  var advanceTimer = null;
+  var buttons = [];
+
+  function noteName(m){ return NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1); }
+  function freq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+  function rnd(n){ return Math.floor(Math.random() * n); }
+  function shuffle(a){ for(var i=a.length-1;i>0;i--){ var j=rnd(i+1); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+
+  // 12音程を各1回 + 残り8問をランダム（同じ音程は最大3回、連続出題は避ける）
+  function makeQuestions(){
+    var semis = [], count = {};
+    for(var s=1;s<=12;s++){ semis.push(s); count[s]=1; }
+    while(semis.length < TOTAL){
+      var x = 1 + rnd(12);
+      if(count[x] >= 3) continue;
+      count[x]++; semis.push(x);
+    }
+    for(var t=0;t<200;t++){
+      shuffle(semis);
+      var ok = true;
+      for(var i=1;i<semis.length;i++){ if(semis[i]===semis[i-1]){ ok=false; break; } }
+      if(ok) break;
+    }
+    return semis.map(function(semi){
+      return { semi: semi, low: LOW + rnd(HIGH - semi - LOW + 1), rdir: Math.random() < 0.5 ? 'up' : 'down', picked: null };
+    });
+  }
+
+  /* ---------- 音 ---------- */
+  var ctx = null, master = null, bus = null;
+  function ensureCtx(){
+    if(!ctx){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      ctx = new AC();
+      master = ctx.createGain(); master.gain.value = 0.55;
+      var comp = ctx.createDynamicsCompressor();
+      master.connect(comp); comp.connect(ctx.destination);
+    }
+    if(ctx.state !== 'running'){ try{ var p = ctx.resume(); if(p && p.catch) p.catch(function(){}); }catch(e){} }
+    return ctx;
+  }
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden && ctx && ctx.state !== 'running'){ try{ ctx.resume(); }catch(e){} }
+  });
+
+  // トランペット風（単音模倣トレーナーと同じ複合オシレータ）
+  function playTrumpet(f, atTime, dur, out){
+    var harmonics = [
+      {ratio:1.0,   amp:1.0},
+      {ratio:2.001, amp:0.4},
+      {ratio:3.004, amp:0.2},
+      {ratio:4.009, amp:0.1}
+    ];
+    harmonics.forEach(function(h){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f * h.ratio, atTime);
+      var decay = dur * 1.5;
+      gain.gain.setValueAtTime(0.0001, atTime);
+      gain.gain.exponentialRampToValueAtTime(0.3 * h.amp, atTime + 0.01);
+      gain.gain.setValueAtTime(0.3 * h.amp, atTime + Math.max(0.05, dur - 0.12));
+      gain.gain.exponentialRampToValueAtTime(0.0001, atTime + decay);
+      osc.connect(gain); gain.connect(out);
+      osc.start(atTime); osc.stop(atTime + decay + 0.02);
+    });
+  }
+
+  function stopSound(){
+    if(bus && ctx){
+      var old = bus, now = ctx.currentTime;
+      try{
+        old.gain.cancelScheduledValues(now);
+        old.gain.setValueAtTime(old.gain.value, now);
+        old.gain.linearRampToValueAtTime(0, now + 0.04);
+      }catch(e){}
+      setTimeout(function(){ try{ old.disconnect(); }catch(e){} }, 120);
+      bus = null;
+    }
+  }
+
+  function playInterval(low, semi, d){
+    ensureCtx();
+    stopSound();
+    bus = ctx.createGain(); bus.gain.value = 1; bus.connect(master);
+    var t = ctx.currentTime + 0.06;
+    var lo = freq(low), hi = freq(low + semi);
+    if(mode === 'harm'){
+      playTrumpet(lo, t, TONE_DUR, bus);
+      playTrumpet(hi, t, TONE_DUR, bus);
+    } else {
+      var first = d === 'down' ? hi : lo, second = d === 'down' ? lo : hi;
+      playTrumpet(first, t, TONE_DUR, bus);
+      playTrumpet(second, t + TONE_DUR, TONE_DUR, bus);
+    }
+  }
+  function qDir(q){ return dir === 'rand' ? q.rdir : dir; }
+  function playQuestion(){ var q = questions[idx]; if(q) playInterval(q.low, q.semi, qDir(q)); }
+
+  /* ---------- 画面 ---------- */
+  function setNotes(low, high){
+    notes.innerHTML = '';
+    var lab = document.createElement('span'); lab.className = 'lowlabel'; lab.textContent = '低い音';
+    var a = document.createElement('span'); a.className = 'n'; a.textContent = noteName(low);
+    var dsh = document.createElement('span'); dsh.className = 'dash'; dsh.textContent = '–';
+    var b = document.createElement('span'); b.className = 'n' + (high == null ? ' q' : ''); b.textContent = high == null ? '?' : noteName(high);
+    notes.appendChild(lab); notes.appendChild(a); notes.appendChild(dsh); notes.appendChild(b);
+  }
+  function setMsg(text, cls){ msg.textContent = text; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
+  function updateNums(){
+    if(phase === 'idle'){ nums.textContent = '全' + TOTAL + '問'; return; }
+    var rate = answered ? Math.round(correct / answered * 100) : 0;
+    var n = Math.min(idx + 1, TOTAL);
+    nums.innerHTML = '第<b>' + n + '</b>問 / ' + TOTAL + '　正答率 <b>' + rate + '%</b>';
+  }
+  function clearMarks(){
+    buttons.forEach(function(b){ b.classList.remove('is-good','is-bad'); });
+    grid.classList.remove('listen');
+  }
+  function setButtonsDisabled(v){ buttons.forEach(function(b){ b.disabled = v; }); }
+
+  function showQuestion(){
+    var q = questions[idx];
+    phase = 'answer';
+    clearMarks(); setButtonsDisabled(false);
+    notes.hidden = false; resultTable.hidden = true;
+    setMsg('この音程は？');
+    setNotes(q.low, null);
+    hint.textContent = '';
+    btnNext.textContent = '次へ'; btnNext.disabled = true;
+    btnReplay.disabled = false; btnQuit.hidden = false;
+    updateNums();
+    playQuestion();
+  }
+
+  function next(){
+    clearTimeout(advanceTimer);
+    idx++;
+    if(idx >= TOTAL){ finish(); return; }
+    showQuestion();
+  }
+
+  function answer(semi){
+    var q = questions[idx];
+    q.picked = semi; answered++;
+    if(semi === q.semi){
+      correct++;
+      phase = 'correct';
+      buttons[semi-1].classList.add('is-good');
+      setButtonsDisabled(true); buttons[semi-1].disabled = false;
+      setMsg('正解！ ' + INTERVALS[semi-1], 'good');
+      setNotes(q.low, q.low + q.semi);
+      updateNums();
+      advanceTimer = setTimeout(next, 1000);
+    } else {
+      phase = 'wrong';
+      buttons[semi-1].classList.add('is-bad');
+      buttons[q.semi-1].classList.add('is-good');
+      grid.classList.add('listen');
+      setMsg('不正解。正解は' + INTERVALS[q.semi-1], 'bad');
+      setNotes(q.low, q.low + q.semi);
+      hint.textContent = '音程ボタンを押すと、同じ低音からその音程を聞けます。';
+      btnNext.disabled = false;
+      btnNext.textContent = idx + 1 >= TOTAL ? '結果を見る' : '次へ';
+      updateNums();
+    }
+  }
+
+  function finish(){
+    phase = 'done';
+    stopSound();
+    clearMarks(); setButtonsDisabled(true);
+    notes.hidden = true;
+    msg.className = 'msg';
+    msg.innerHTML = '';
+    var sc = document.createElement('div'); sc.className = 'score';
+    sc.innerHTML = correct + '<small> / ' + TOTAL + '問正解</small>';
+    msg.appendChild(sc);
+    hint.textContent = '音程ごとの成績（正解数 / 出題数）';
+    resultBody.innerHTML = '';
+    for(var s=1;s<=12;s++){
+      var asked = 0, ok = 0;
+      questions.forEach(function(q){ if(q.semi === s){ asked++; if(q.picked === s) ok++; } });
+      var tr = document.createElement('tr'); if(ok < asked) tr.className = 'miss';
+      var a = document.createElement('td'); a.textContent = INTERVALS[s-1];
+      var b = document.createElement('td'); b.textContent = ok + ' / ' + asked;
+      tr.appendChild(a); tr.appendChild(b); resultBody.appendChild(tr);
+    }
+    resultTable.hidden = false;
+    btnNext.textContent = 'もう一度'; btnNext.disabled = false;
+    btnReplay.disabled = true; btnQuit.hidden = true;
+    nums.innerHTML = '正答率 <b>' + Math.round(correct / TOTAL * 100) + '%</b>';
+  }
+
+  function start(){
+    questions = makeQuestions();
+    idx = -1; correct = 0; answered = 0;
+    next();
+  }
+
+  function reset(){
+    clearTimeout(advanceTimer); stopSound();
+    phase = 'idle'; idx = -1;
+    clearMarks(); setButtonsDisabled(true);
+    notes.hidden = false; resultTable.hidden = true;
+    setMsg('2つの音の音程を当ててください');
+    setNotes(LOW, null);
+    hint.textContent = '音域 C3〜C5、音程は1オクターブ以内。全20問で12種類すべて出題します。';
+    btnNext.textContent = 'はじめる'; btnNext.disabled = false;
+    btnReplay.disabled = true; btnQuit.hidden = true;
+    updateNums();
+  }
+
+  /* ---------- 組み立て ---------- */
+  INTERVALS.forEach(function(name, i){
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = 'iv-' + (i+1); b.textContent = name; b.disabled = true;
+    b.addEventListener('click', function(){
+      var semi = i + 1;
+      if(phase === 'answer'){ answer(semi); }
+      else if(phase === 'wrong'){ var q = questions[idx]; playInterval(q.low, semi, qDir(q)); }
+    });
+    grid.appendChild(b); buttons.push(b);
+  });
+
+  btnNext.addEventListener('click', function(){
+    ensureCtx();
+    if(phase === 'idle' || phase === 'done') start();
+    else if(phase === 'wrong') next();
+  });
+  btnReplay.addEventListener('click', function(){
+    if(phase === 'answer' || phase === 'wrong' || phase === 'correct') playQuestion();
+  });
+  btnQuit.addEventListener('click', reset);
+
+  function syncSettings(){
+    ['seq','harm'].forEach(function(m){ $('mode-' + m).setAttribute('aria-pressed', String(mode === m)); });
+    ['up','down','rand'].forEach(function(d){ $('dir-' + d).setAttribute('aria-pressed', String(dir === d)); });
+    $('dir-group').hidden = mode !== 'seq';
+    try{ localStorage.setItem('ontei.mode', mode); localStorage.setItem('ontei.dir', dir); }catch(e){}
+  }
+  ['seq','harm'].forEach(function(m){
+    $('mode-' + m).addEventListener('click', function(){ mode = m; syncSettings(); });
+  });
+  ['up','down','rand'].forEach(function(d){
+    $('dir-' + d).addEventListener('click', function(){ dir = d; syncSettings(); });
+  });
+
+  syncSettings();
+  reset();
+})();
+</script>
+</body>
+</html>
