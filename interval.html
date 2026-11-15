@@ -202,20 +202,55 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
   }
 
   /* ---------- 音 ---------- */
-  var ctx = null, master = null, bus = null;
-  function ensureCtx(){
-    if(!ctx){
-      var AC = window.AudioContext || window.webkitAudioContext;
-      ctx = new AC();
-      master = ctx.createGain(); master.gain.value = 0.55;
-      var comp = ctx.createDynamicsCompressor();
-      master.connect(comp); comp.connect(ctx.destination);
-    }
-    if(ctx.state !== 'running'){ try{ var p = ctx.resume(); if(p && p.catch) p.catch(function(){}); }catch(e){} }
-    return ctx;
+  // Safariは放置・画面ロック後にAudioContextを「中断」状態にし、resume()が戻らないことがある。
+  // クロックが止まっていたら、古いコンテキストを捨てて作り直す。
+  var ctx = null, master = null, bus = null, lastT = -1, lastWall = 0;
+  function buildCtx(){
+    var AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = 0.55;
+    var comp = ctx.createDynamicsCompressor();
+    master.connect(comp); comp.connect(ctx.destination);
+    bus = null; lastT = -1; lastWall = 0;
   }
+  function killCtx(){
+    if(ctx){ try{ ctx.close(); }catch(e){} }
+    ctx = null; master = null; bus = null;
+  }
+  // ユーザー操作の中で同期的に呼ぶ：無音バッファ再生＋resumeでSafariのロックを解除
+  function unlock(){
+    if(!ctx || ctx.state === 'closed') buildCtx();
+    try{
+      var b = ctx.createBuffer(1, 1, 22050);
+      var s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(0);
+    }catch(e){}
+    try{ var p = ctx.resume(); if(p && p.catch) p.catch(function(){}); }catch(e){}
+  }
+  function clockFrozen(){
+    return lastT >= 0 && ctx.currentTime === lastT && (Date.now() - lastWall) > 1500;
+  }
+  // 使えるコンテキストを用意してから resolve する
+  function readyCtx(){
+    if(!ctx || ctx.state === 'closed' || clockFrozen()){ killCtx(); buildCtx(); }
+    if(ctx.state === 'running') return Promise.resolve(ctx);
+    return new Promise(function(resolve){
+      var done = false;
+      function finish(){ if(done) return; done = true; resolve(ctx); }
+      var timer = setTimeout(function(){
+        if(ctx.state !== 'running'){ killCtx(); buildCtx(); unlock(); }
+        finish();
+      }, 400);
+      try{
+        var p = ctx.resume();
+        if(p && p.then) p.then(function(){ clearTimeout(timer); finish(); }, function(){});
+      }catch(e){}
+    });
+  }
+  function ensureCtx(){ unlock(); }
   document.addEventListener('visibilitychange', function(){
-    if(!document.hidden && ctx && ctx.state !== 'running'){ try{ ctx.resume(); }catch(e){} }
+    if(!document.hidden && ctx && ctx.state !== 'running'){
+      try{ var p = ctx.resume(); if(p && p.catch) p.catch(function(){}); }catch(e){}
+    }
   });
 
   // トランペット風（単音模倣トレーナーと同じ複合オシレータ）
@@ -254,33 +289,43 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
     }
   }
 
+  var playSeq = 0;
   function playInterval(low, semi, d){
-    ensureCtx();
-    stopSound();
-    bus = ctx.createGain(); bus.gain.value = 1; bus.connect(master);
-    var t = ctx.currentTime + 0.06;
-    var lo = freq(low), hi = freq(low + semi);
-    if(mode === 'harm'){
-      playTrumpet(lo, t, TONE_DUR, bus);
-      playTrumpet(hi, t, TONE_DUR, bus);
-    } else {
-      var first = d === 'down' ? hi : lo, second = d === 'down' ? lo : hi;
-      playTrumpet(first, t, TONE_DUR, bus);
-      playTrumpet(second, t + TONE_DUR, TONE_DUR, bus);
-    }
+    unlock();
+    var my = ++playSeq;
+    readyCtx().then(function(){
+      if(my !== playSeq) return;           // 後から別の再生が要求された
+      stopSound();
+      bus = ctx.createGain(); bus.gain.value = 1; bus.connect(master);
+      var t = ctx.currentTime + 0.06;
+      var lo = freq(low), hi = freq(low + semi);
+      if(mode === 'harm'){
+        playTrumpet(lo, t, TONE_DUR, bus);
+        playTrumpet(hi, t, TONE_DUR, bus);
+      } else {
+        var first = d === 'down' ? hi : lo, second = d === 'down' ? lo : hi;
+        playTrumpet(first, t, TONE_DUR, bus);
+        playTrumpet(second, t + TONE_DUR, TONE_DUR, bus);
+      }
+      lastT = ctx.currentTime; lastWall = Date.now();
+    });
   }
   function qDir(q){ return dir === 'rand' ? q.rdir : dir; }
   function playQuestion(){ var q = questions[idx]; if(q) playInterval(q.low, q.semi, qDir(q)); }
 
   /* ---------- 画面 ---------- */
-  function setNotes(low, high){
+  // 連続・下行のときは先に鳴る高い音を表示、それ以外は低い音を表示
+  function setNotes(low, semi, revealed, showHigh){
     notes.innerHTML = '';
-    var lab = document.createElement('span'); lab.className = 'lowlabel'; lab.textContent = '低い音';
-    var a = document.createElement('span'); a.className = 'n'; a.textContent = noteName(low);
+    var high = low + semi;
+    var shown = showHigh ? high : low, other = showHigh ? low : high;
+    var lab = document.createElement('span'); lab.className = 'lowlabel'; lab.textContent = showHigh ? '高い音' : '低い音';
+    var a = document.createElement('span'); a.className = 'n'; a.textContent = noteName(shown);
     var dsh = document.createElement('span'); dsh.className = 'dash'; dsh.textContent = '–';
-    var b = document.createElement('span'); b.className = 'n' + (high == null ? ' q' : ''); b.textContent = high == null ? '?' : noteName(high);
+    var b = document.createElement('span'); b.className = 'n' + (revealed ? '' : ' q'); b.textContent = revealed ? noteName(other) : '?';
     notes.appendChild(lab); notes.appendChild(a); notes.appendChild(dsh); notes.appendChild(b);
   }
+  function qShowHigh(q){ return mode === 'seq' && qDir(q) === 'down'; }
   function setMsg(text, cls){ msg.textContent = text; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
   function updateNums(){
     if(phase === 'idle'){ nums.textContent = '全' + TOTAL + '問'; return; }
@@ -300,7 +345,7 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
     clearMarks(); setButtonsDisabled(false);
     notes.hidden = false; resultTable.hidden = true;
     setMsg('この音程は？');
-    setNotes(q.low, null);
+    setNotes(q.low, q.semi, false, qShowHigh(q));
     hint.textContent = '';
     btnNext.textContent = '次へ'; btnNext.disabled = true;
     btnReplay.disabled = false; btnQuit.hidden = false;
@@ -324,7 +369,7 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
       buttons[semi-1].classList.add('is-good');
       setButtonsDisabled(true); buttons[semi-1].disabled = false;
       setMsg('正解！ ' + INTERVALS[semi-1], 'good');
-      setNotes(q.low, q.low + q.semi);
+      setNotes(q.low, q.semi, true, qShowHigh(q));
       updateNums();
       advanceTimer = setTimeout(next, 1000);
     } else {
@@ -333,7 +378,7 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
       buttons[q.semi-1].classList.add('is-good');
       grid.classList.add('listen');
       setMsg('不正解。正解は' + INTERVALS[q.semi-1], 'bad');
-      setNotes(q.low, q.low + q.semi);
+      setNotes(q.low, q.semi, true, qShowHigh(q));
       hint.textContent = '音程ボタンを押すと、同じ低音からその音程を聞けます。';
       btnNext.disabled = false;
       btnNext.textContent = idx + 1 >= TOTAL ? '結果を見る' : '次へ';
@@ -379,7 +424,7 @@ button:focus-visible{outline:3px solid var(--brass);outline-offset:2px}
     clearMarks(); setButtonsDisabled(true);
     notes.hidden = false; resultTable.hidden = true;
     setMsg('2つの音の音程を当ててください');
-    setNotes(LOW, null);
+    setNotes(LOW, 7, false, false);
     hint.textContent = '音域 C3〜C5、音程は1オクターブ以内。全20問で12種類すべて出題します。';
     btnNext.textContent = 'はじめる'; btnNext.disabled = false;
     btnReplay.disabled = true; btnQuit.hidden = true;
