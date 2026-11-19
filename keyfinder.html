@@ -232,7 +232,7 @@
     <button type="button" id="mBtn" aria-pressed="false">短調 M</button>
     <button type="button" class="shbtn" id="shDownBtn" aria-pressed="false">▼ 1オクターブ下</button>
     <button type="button" class="shbtn" id="shUpBtn" aria-pressed="false">▲ 1オクターブ上</button>
-    <label>鍵盤の音量 <input type="range" id="kbVol" min="0" max="100" value="40"></label>
+    <label>鍵盤の音量 <input type="range" id="kbVol" min="0" max="100" value="30"></label>
     <label>長押し時間
       <select id="holdSel">
         <option value="2">2秒</option>
@@ -429,7 +429,7 @@
 
   // ---------- Audio（トランペット鍵盤と同じ音色・経路） ----------
   const kbVolEl = $("kbVol");
-  kbVolEl.value = store.get("kbVol", 40);
+  kbVolEl.value = store.get("kbVol", 30);
   const volume = () => (kbVolEl.value / 70) * 0.55;
 
   let ctx = null, master, voiceBus;
