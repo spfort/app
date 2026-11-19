@@ -429,7 +429,7 @@
 
   // ---------- Audio（トランペット鍵盤と同じ音色・経路） ----------
   const kbVolEl = $("kbVol");
-  kbVolEl.value = store.get("kbVol", 70);
+  kbVolEl.value = store.get("kbVol", 40);
   const volume = () => (kbVolEl.value / 70) * 0.55;
 
   let ctx = null, master, voiceBus;
