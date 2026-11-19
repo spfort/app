@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>キー探しトレーナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Zen+Kaku+Gothic+New:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14110d; --brass:#d4a64a; --brass-hi:#f3d48a; --ink:#efe6d4; --muted:#9a8e78;
+    --line:#5a4a2e; --panel:#1f1912; --minor:#8fb6e8;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    min-height:100vh;
+    background:radial-gradient(ellipse 90% 50% at 50% -10%, #3d2e15 0%, var(--bg) 62%);
+    color:var(--ink);
+    font-family:"Zen Kaku Gothic New", system-ui, -apple-system, "Hiragino Sans", sans-serif;
+    display:flex; justify-content:center;
+    -webkit-tap-highlight-color:transparent;
+  }
+  main{width:min(860px,100%); padding:14px 14px 36px; outline:none}
+  header{text-align:center; margin-bottom:8px}
+  h1{
+    font-family:"Shippori Mincho", serif; font-weight:800;
+    font-size:clamp(24px,4.6vw,34px); margin:0; letter-spacing:.06em;
+    background:linear-gradient(180deg,var(--brass-hi),var(--brass) 55%,#9c7426);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .sub{margin:4px 0 0; color:var(--muted); font-size:13px; letter-spacing:.03em}
+
+  .warnbox{
+    background:#3a2410; border:1px solid #8a5a20; color:#f6d9a8; border-radius:10px;
+    padding:10px 12px; font-size:13px; line-height:1.6; margin-bottom:10px;
+  }
+  .mono{font-family:ui-monospace, "SF Mono", Menlo, monospace}
+
+  .urlrow{display:flex; gap:8px; margin-bottom:10px}
+  .urlrow input{
+    flex:1; min-width:0; font:inherit; font-size:14px; color:var(--ink);
+    background:#0f0c09; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+  }
+  button.btn{
+    font:inherit; font-size:13px; color:var(--ink); background:#2a2116;
+    border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; white-space:nowrap;
+  }
+  button.btn:hover{background:#3a2d1c}
+  button.btn:disabled{opacity:.4; cursor:default}
+
+  .stage{
+    position:relative; width:min(100%, calc(30vh * 16 / 9)); margin:0 auto;
+    aspect-ratio:16/9; background:#000; border-radius:12px; overflow:hidden;
+    box-shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+  .stage iframe, #player{position:absolute; inset:0; width:100%; height:100%; border:0}
+  #ytMsg{
+    position:absolute; inset:auto 10px 10px 10px; background:rgba(40,10,10,.92); color:#ffd6c8;
+    border-radius:8px; padding:8px 10px; font-size:13px; line-height:1.5; z-index:3;
+  }
+
+  .ytbar{display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:10px 20px; margin:10px 2px 0; font-size:13px}
+  .ytbar label{display:flex; align-items:center; gap:8px}
+
+  .keypanel{
+    margin-top:10px; padding:10px 14px; border-radius:12px; background:var(--panel);
+    border:1px solid #3a2f1f; display:grid; grid-template-columns:1fr auto; gap:6px 12px; align-items:center;
+  }
+  #keyName{font-family:"Shippori Mincho",serif; font-weight:800; font-size:clamp(22px,4.4vw,30px); color:var(--brass-hi)}
+  #keyName.minor{color:var(--minor)}
+  #keyDetail{font-size:13px; color:var(--muted); margin-top:2px}
+  .kp-btns{display:flex; gap:8px; grid-row:1 / span 2; grid-column:2}
+  #holdBox{grid-column:1 / -1; min-height:34px}
+  #holdText{font-size:13.5px; min-height:20px}
+  #holdText b{color:var(--brass-hi)}
+  #holdText b.minor{color:var(--minor)}
+  .bar{height:6px; border-radius:3px; background:#2c241a; overflow:hidden; margin-top:6px}
+  .bar i{display:block; height:100%; width:0; background:linear-gradient(90deg,#9c7426,var(--brass-hi))}
+  .bar.minor i{background:linear-gradient(90deg,#3f6aa3,var(--minor))}
+
+  #kb{
+    margin-top:10px; padding:12px 12px 14px; border-radius:16px;
+    background:linear-gradient(180deg,#2c2218,#15100b);
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 40px rgba(0,0,0,.55);
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  }
+  #kb.flash{animation:flash .7s ease-out}
+  @keyframes flash{0%{box-shadow:0 0 0 3px var(--brass-hi), 0 0 40px rgba(243,212,138,.6)}100%{box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 18px 40px rgba(0,0,0,.55)}}
+  #keys{position:relative; display:flex; height:clamp(170px,min(36vw,26vh),260px)}
+  .key{cursor:pointer; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; text-align:center}
+  .white{
+    position:relative; flex:1; margin:0 2px; border-radius:0 0 9px 9px; color:#3b3226;
+    background:linear-gradient(180deg,#fbf7ee 0%,#ece4d2 100%);
+    box-shadow:inset 0 -7px 0 #cdc1a7, 0 2px 0 #000;
+    padding-bottom:14px; transition:transform .04s, box-shadow .04s;
+  }
+  .white.on{
+    background:linear-gradient(180deg,#f7e3a9 0%,#e2bc5c 100%);
+    box-shadow:inset 0 -2px 0 #b38c36, 0 1px 0 #000; transform:translateY(3px);
+  }
+  .black{
+    position:absolute; top:0; width:7.4%; height:61%; z-index:2; color:#ddd0b6;
+    border-radius:0 0 7px 7px;
+    background:linear-gradient(180deg,#3b342c 0%,#100e0b 100%);
+    box-shadow:inset 0 -6px 0 #000, inset 1px 0 0 rgba(255,255,255,.08), 0 4px 8px rgba(0,0,0,.6);
+    padding-bottom:10px; transition:transform .04s;
+  }
+  .black.on{
+    background:linear-gradient(180deg,#8a6526 0%,#3c2b0e 100%);
+    box-shadow:inset 0 -2px 0 #000, 0 2px 4px rgba(0,0,0,.6); transform:translateY(2px);
+  }
+  /* 長押しの進み具合（鍵盤の上端にバー） */
+  .key::before{
+    content:""; position:absolute; left:0; top:0; height:6px; width:calc(var(--p,0) * 100%);
+    background:var(--brass); border-radius:0 0 3px 0; pointer-events:none;
+  }
+  .key.mprev::before{background:var(--minor)}
+  /* 主音の印 */
+  .key.tonic .jp{text-decoration:underline; text-decoration-thickness:2px; text-underline-offset:3px}
+  .white.tonic{box-shadow:inset 0 -7px 0 #cdc1a7, inset 0 0 0 2px rgba(212,166,74,.85), 0 2px 0 #000}
+  .white.tonic.minor{box-shadow:inset 0 -7px 0 #cdc1a7, inset 0 0 0 2px rgba(110,150,210,.9), 0 2px 0 #000}
+  .black.tonic{outline:2px solid rgba(212,166,74,.85); outline-offset:-2px}
+  .black.tonic.minor{outline-color:rgba(110,150,210,.9)}
+
+  .cap{
+    font:700 13px/1 ui-monospace, "SF Mono", Menlo, monospace;
+    min-width:24px; height:24px; padding:0 4px; border-radius:6px;
+    border:1.5px solid currentColor; display:grid; place-items:center;
+    margin-bottom:8px; opacity:.85;
+  }
+  .black .cap{min-width:20px; height:20px; font-size:11px; margin-bottom:6px}
+  .jp{font-size:14px; font-weight:700}
+  .nm{font-size:11.5px; opacity:.7; margin-top:2px; font-weight:700}
+  .black .jp{font-size:10px}
+  .black .nm{font-size:9.5px}
+
+  .controls{
+    display:flex; flex-wrap:wrap; gap:12px 22px; align-items:center; justify-content:center;
+    margin:18px 0 6px; font-size:13.5px;
+  }
+  .controls label{display:flex; align-items:center; gap:8px; cursor:pointer}
+  input[type=range]{width:130px; accent-color:var(--brass); touch-action:pan-y}
+  select{font:inherit; font-size:13px; color:var(--ink); background:#0f0c09; border:1px solid var(--line); border-radius:6px; padding:4px 6px}
+  .seg{display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden}
+  .seg button{
+    font:inherit; font-size:12px; color:var(--muted); background:transparent; border:0;
+    padding:6px 10px; cursor:pointer;
+  }
+  .seg button[aria-pressed=true]{background:#5a4420; color:var(--brass-hi)}
+  #mBtn{
+    font:700 14px/1 inherit; font-family:inherit; color:var(--minor); background:#141c28;
+    border:1.5px solid #3f6aa3; border-radius:10px; padding:10px 16px; cursor:pointer;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  }
+  #mBtn.on{background:#3f6aa3; color:#fff}
+  .hint{color:var(--muted); font-size:12.5px; line-height:1.8; margin-top:14px; padding:0 4px}
+  .hint kbd{
+    font:600 11px ui-monospace, Menlo, monospace; border:1px solid var(--line); border-radius:4px;
+    padding:1px 5px; color:var(--ink);
+  }
+  .hint ul{margin:4px 0 0; padding-left:1.2em}
+  #focusNote{
+    position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:10;
+    background:#2a2116; border:1px solid var(--brass); color:var(--brass-hi); border-radius:10px;
+    padding:8px 14px; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.5); cursor:pointer;
+  }
+  @media (max-width:520px){
+    .black .jp,.black .nm{display:none}
+    .white .nm{font-size:10px}
+    .cap{min-width:20px; height:20px; font-size:11px}
+    .keypanel{grid-template-columns:1fr}
+    .kp-btns{grid-row:auto; grid-column:1}
+  }
+</style>
+</head>
+<body>
+<main id="main" tabindex="-1">
+  <header>
+    <h1>キー探しトレーナー</h1>
+    <p class="sub">動画に合わせて鍵盤を鳴らし、主音を見つけたら3秒長押しで移調</p>
+  </header>
+
+  <div id="fileWarn" class="warnbox" hidden>このファイルをPCから直接開いています。YouTubeは直接開いたファイル内での再生を拒否することがあります（エラー153など）。GitHub Pages に置くか、フォルダで <span class="mono">python3 -m http.server</span> を実行して <span class="mono">http://localhost:8000/</span> から開いてください。</div>
+
+  <form class="urlrow" id="urlForm">
+    <input type="text" id="urlIn" placeholder="YouTubeのURLまたは動画ID" aria-label="YouTubeのURL" autocomplete="off" spellcheck="false">
+    <button class="btn" type="submit">読み込み</button>
+  </form>
+
+  <div class="stage">
+    <div id="player"></div>
+    <div id="ytMsg" hidden></div>
+  </div>
+
+  <div class="ytbar">
+    <button class="btn" id="btnPlay" type="button" disabled>再生 / 一時停止 <span class="mono" style="opacity:.6">Space</span></button>
+    <label>動画の音量 <input type="range" id="ytVol" min="0" max="100" value="60"></label>
+  </div>
+
+  <section class="keypanel" aria-live="polite">
+    <div>
+      <div id="keyName">Cメジャー</div>
+      <div id="keyDetail"></div>
+    </div>
+    <div class="kp-btns">
+      <button class="btn" id="btnUndo" type="button" disabled>元に戻す</button>
+      <button class="btn" id="btnReset" type="button" disabled>ド＝Cに戻す</button>
+    </div>
+    <div id="holdBox">
+      <div id="holdText"></div>
+      <div class="bar" id="holdBar"><i></i></div>
+    </div>
+  </section>
+
+  <div id="kb"><div id="keys" role="group" aria-label="鍵盤"></div></div>
+
+  <div class="controls">
+    <button type="button" id="mBtn" aria-pressed="false">短調 M</button>
+    <label>鍵盤の音量 <input type="range" id="kbVol" min="0" max="100" value="70"></label>
+    <label>長押し時間
+      <select id="holdSel">
+        <option value="2">2秒</option>
+        <option value="3" selected>3秒</option>
+        <option value="4">4秒</option>
+        <option value="5">5秒</option>
+      </select>
+    </label>
+    <div class="seg" role="group" aria-label="鍵盤の音域">
+      <button type="button" id="octLow" aria-pressed="true">低め（ド＝3オクターブ目）</button>
+      <button type="button" id="octHigh" aria-pressed="false">高め（＋1オクターブ）</button>
+    </div>
+  </div>
+
+  <div class="hint">
+    <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>U</kbd><kbd>J</kbd><kbd>I</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>+</kbd> が「ド」から1オクターブ上の「ド」まで。<kbd>+</kbd> は L の右隣のキー（JIS配列の <kbd>;</kbd>/<kbd>+</kbd>）です。
+    <ul>
+      <li><b>長調</b>：主音だと思った鍵盤を1つだけ3秒押し続けると、その音が新しい「ド」になります。</li>
+      <li><b>短調</b>：<kbd>M</kbd>（または画面の「短調 M」ボタン）を押したまま主音を3秒長押しすると、その音が「ラ」になるように移調します（例：ソ＋M → Gマイナー → ド＝A♯）。</li>
+      <li>2つ以上の鍵盤を同時に押すと長押しは取り消されます（和音や持続音での確認中に誤って移調しないため）。</li>
+      <li>鍵盤の「ド」「ミ」などは移動ド、下の英字が実際の音名です。新しい動画を読み込むと「ド＝C」に戻ります。</li>
+      <li>動画プレーヤーをクリックした後は、少しすると自動的に鍵盤の操作に戻ります。キーが効かないときはページの余白をクリックしてください。</li>
+    </ul>
+  </div>
+</main>
+<div id="focusNote" hidden>キーボードで弾くには、ここをクリック</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const DEFAULT_URL = "https://www.youtube.com/watch?v=rxejUVC1yVQ";
+  const PC = ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+
+  // ---------- 設定の保存（使えない環境では無視） ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("keyfinder." + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("keyfinder." + k, JSON.stringify(v)); } catch (e) {} },
+  };
+
+  // ---------- 鍵盤定義（移動ド13鍵） ----------
+  const NOTES = [
+    {code:"KeyA",      cap:"A", jp:"ド",    black:false},
+    {code:"KeyW",      cap:"W", jp:"ド♯",   black:true },
+    {code:"KeyS",      cap:"S", jp:"レ",    black:false},
+    {code:"KeyE",      cap:"E", jp:"レ♯",   black:true },
+    {code:"KeyD",      cap:"D", jp:"ミ",    black:false},
+    {code:"KeyF",      cap:"F", jp:"ファ",  black:false},
+    {code:"KeyU",      cap:"U", jp:"ファ♯", black:true },
+    {code:"KeyJ",      cap:"J", jp:"ソ",    black:false},
+    {code:"KeyI",      cap:"I", jp:"ソ♯",   black:true },
+    {code:"KeyK",      cap:"K", jp:"ラ",    black:false},
+    {code:"KeyO",      cap:"O", jp:"ラ♯",   black:true },
+    {code:"KeyL",      cap:"L", jp:"シ",    black:false},
+    {code:"Semicolon", cap:"+", jp:"ド",    black:false},
+  ];
+  const CODE_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.code, i]));
+  const CHAR_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.cap.toLowerCase(), i]));
+  CHAR_TO_I[";"] = 12;
+
+  // ---------- 調の状態 ----------
+  let doPc = 0;            // 「ド」の音名（0=C … 11=B）
+  let mode = "major";      // 最後に決めたのが長調か短調か（表示用）
+  let octBase = store.get("octBase", 48) === 60 ? 60 : 48;   // C3 = MIDI 48
+  const history = [];
+
+  const midiOf = i => octBase + doPc + i;
+  const freqOf = i => 440 * Math.pow(2, (midiOf(i) - 69) / 12);
+  const nameOf = m => PC[m % 12] + (Math.floor(m / 12) - 1);
+  const majorName = pc => PC[pc] + "メジャー";
+  const minorName = pc => PC[pc] + "マイナー";
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const keysEl = $("keys"), kbEl = $("kb");
+  const keyEls = [];
+  let whiteIdx = 0;
+  NOTES.forEach((n, i) => {
+    const el = document.createElement("div");
+    el.className = "key " + (n.black ? "black" : "white");
+    el.dataset.i = i;
+    el.innerHTML = `<span class="cap">${n.cap}</span><span class="jp">${n.jp}</span><span class="nm"></span>`;
+    if (n.black) el.style.left = `calc(${whiteIdx * 12.5}% - 3.7%)`;
+    else whiteIdx++;
+    keysEl.appendChild(el);
+    keyEls.push(el);
+  });
+
+  const keyNameEl = $("keyName"), keyDetailEl = $("keyDetail");
+  const holdText = $("holdText"), holdBar = $("holdBar"), holdFill = holdBar.firstElementChild;
+  const btnUndo = $("btnUndo"), btnReset = $("btnReset");
+
+  function render() {
+    keyEls.forEach((el, i) => {
+      el.querySelector(".nm").textContent = nameOf(midiOf(i));
+      const isTonic = mode === "minor" ? i === 9 : (i === 0 || i === 12);
+      el.classList.toggle("tonic", isTonic);
+      el.classList.toggle("minor", isTonic && mode === "minor");
+    });
+    const relMinor = (doPc + 9) % 12;
+    if (mode === "minor") {
+      keyNameEl.textContent = minorName(relMinor);
+      keyDetailEl.textContent = `ド＝${PC[doPc]}（${majorName(doPc)}と同じ音階）・ 鍵盤 ${nameOf(midiOf(0))}–${nameOf(midiOf(12))}`;
+    } else {
+      keyNameEl.textContent = majorName(doPc);
+      keyDetailEl.textContent = `ド＝${PC[doPc]} ・ 平行調 ${minorName(relMinor)} ・ 鍵盤 ${nameOf(midiOf(0))}–${nameOf(midiOf(12))}`;
+    }
+    keyNameEl.classList.toggle("minor", mode === "minor");
+    btnUndo.disabled = history.length === 0;
+    btnReset.disabled = doPc === 0 && mode === "major";
+  }
+
+  function setKey(newDo, newMode, remember) {
+    if (remember) history.push({ doPc, mode });
+    doPc = newDo; mode = newMode;
+    render();
+  }
+
+  function transposeFrom(i, minor) {
+    const pc = (doPc + i) % 12;            // 押した鍵盤の実際の音名
+    const newDo = minor ? (pc + 3) % 12 : pc;
+    setKey(newDo, minor ? "minor" : "major", true);
+    kbEl.classList.remove("flash"); void kbEl.offsetWidth; kbEl.classList.add("flash");
+    holdText.innerHTML = minor
+      ? `<b class="minor">${minorName(pc)}</b> に移調しました（ド＝${PC[newDo]}）`
+      : `<b>${majorName(pc)}</b> に移調しました（ド＝${PC[newDo]}）`;
+    holdFill.style.width = "0";
+  }
+
+  btnUndo.addEventListener("click", () => {
+    const h = history.pop();
+    if (!h) return;
+    doPc = h.doPc; mode = h.mode; render();
+    holdText.textContent = "1つ前のキーに戻しました";
+  });
+  btnReset.addEventListener("click", () => {
+    setKey(0, "major", true);
+    holdText.textContent = "ド＝C に戻しました";
+  });
+
+  // ---------- Audio（トランペット鍵盤と同じ音色・経路） ----------
+  const kbVolEl = $("kbVol");
+  kbVolEl.value = store.get("kbVol", 70);
+  const volume = () => (kbVolEl.value / 70) * 0.55;
+
+  let ctx = null, master, voiceBus;
+  let lastProbe = null;
+
+  function buildCtx() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ctx = new AC();
+    voiceBus = ctx.createGain();
+    master = ctx.createGain();
+    master.gain.value = volume();
+    const comp = ctx.createDynamicsCompressor();
+    voiceBus.connect(master); master.connect(comp); comp.connect(ctx.destination);
+    lastProbe = { wall: performance.now(), ct: ctx.currentTime };
+  }
+  function ensureCtx() {
+    if (!ctx || ctx.state === "closed") { buildCtx(); }
+    else if (ctx.state === "running" && lastProbe) {
+      const dWall = (performance.now() - lastProbe.wall) / 1000;
+      const dCt = ctx.currentTime - lastProbe.ct;
+      if (dWall > 1 && dCt < dWall * 0.2) { rebuildCtx(); }
+    } else if (ctx.state === "interrupted") {
+      rebuildCtx();
+    }
+    if (ctx.state !== "running") { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); }
+    lastProbe = { wall: performance.now(), ct: ctx.currentTime };
+  }
+  function rebuildCtx() {
+    releaseAll(true);
+    try { ctx.close(); } catch (e) {}
+    buildCtx();
+  }
+  setInterval(() => { if (ctx && ctx.state === "running") lastProbe = { wall: performance.now(), ct: ctx.currentTime }; }, 500);
+
+  const HARMONICS = [
+    { ratio: 1.0,   amp: 1.0 },
+    { ratio: 2.001, amp: 0.4 },
+    { ratio: 3.004, amp: 0.2 },
+    { ratio: 4.009, amp: 0.1 },
+  ];
+  const RELEASE = 0.62;
+
+  function startVoice(f) {
+    const t = ctx.currentTime + 0.004;
+    const parts = HARMONICS.map(h => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(f * h.ratio, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.3 * h.amp, t + 0.01);
+      osc.connect(gain); gain.connect(voiceBus);
+      osc.start(t);
+      return { osc, gain };
+    });
+    return {
+      release(fast) {
+        const now = ctx.currentTime;
+        const rel = fast ? 0.03 : RELEASE;
+        parts.forEach(({ osc, gain }) => {
+          const g = gain.gain;
+          if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now);
+          else { g.cancelScheduledValues(now); g.setValueAtTime(Math.max(g.value, 0.0001), now); }
+          g.exponentialRampToValueAtTime(0.0001, now + rel);
+          try { osc.stop(now + rel + 0.02); } catch (e) {}
+          osc.onended = () => { try { gain.disconnect(); } catch (e) {} };
+        });
+      }
+    };
+  }
+
+  // ---------- 発音管理と長押し判定 ----------
+  const held = new Map();            // sourceId -> {i, voice}
+  const counts = new Array(NOTES.length).fill(0);
+  let cand = null;                   // 長押し候補 {src, i, start}
+  let rafId = 0;
+
+  const holdSel = $("holdSel");
+  holdSel.value = String(store.get("hold", 3));
+  if (!holdSel.value) holdSel.value = "3";
+  const holdMs = () => (+holdSel.value || 3) * 1000;
+
+  let mKey = false, mTouch = false;
+  const mHeld = () => mKey || mTouch;
+  const mBtn = $("mBtn");
+  function updateM() {
+    const on = mHeld();
+    mBtn.classList.toggle("on", on);
+    mBtn.setAttribute("aria-pressed", on);
+  }
+
+  function clearCandVisual() {
+    keyEls.forEach(el => { el.style.removeProperty("--p"); el.classList.remove("mprev"); });
+    holdFill.style.width = "0";
+    holdBar.classList.remove("minor");
+  }
+  function cancelCand(msg) {
+    if (!cand) return;
+    cand = null;
+    clearCandVisual();
+    if (msg !== undefined) holdText.textContent = msg;
+  }
+
+  function tick() {
+    rafId = 0;
+    if (!cand) return;
+    const p = Math.min(1, (performance.now() - cand.start) / holdMs());
+    const minor = mHeld();
+    const el = keyEls[cand.i];
+    el.style.setProperty("--p", p);
+    el.classList.toggle("mprev", minor);
+    holdFill.style.width = (p * 100) + "%";
+    holdBar.classList.toggle("minor", minor);
+    const pc = (doPc + cand.i) % 12;
+    const sec = (p * holdMs() / 1000).toFixed(1), tot = (holdMs() / 1000).toFixed(0);
+    holdText.innerHTML = minor
+      ? `${NOTES[cand.i].jp}（${PC[pc]}）＋M を長押し中 ${sec} / ${tot} 秒 → <b class="minor">${minorName(pc)}</b>（ド＝${PC[(pc + 3) % 12]}）`
+      : `${NOTES[cand.i].jp}（${PC[pc]}）を長押し中 ${sec} / ${tot} 秒 → <b>${majorName(pc)}</b>（ド＝${PC[pc]}）`;
+    if (p >= 1) {
+      const i = cand.i;
+      cand = null;
+      clearCandVisual();
+      transposeFrom(i, minor);
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function noteOn(src, i) {
+    if (held.has(src)) noteOff(src);
+    ensureCtx();
+    const voice = startVoice(freqOf(i));
+    held.set(src, { i, voice });
+    counts[i]++;
+    keyEls[i].classList.add("on");
+    if (held.size === 1) {
+      cancelCand();
+      cand = { src, i, start: performance.now() };
+      if (!rafId) rafId = requestAnimationFrame(tick);
+    } else if (cand) {
+      cancelCand("同時に押したので長押しを取り消しました");
+    }
+  }
+  function noteOff(src, fast) {
+    const h = held.get(src);
+    if (!h) return;
+    held.delete(src);
+    h.voice.release(fast);
+    counts[h.i] = Math.max(0, counts[h.i] - 1);
+    if (counts[h.i] === 0) keyEls[h.i].classList.remove("on");
+    if (cand && cand.src === src) cancelCand("");
+  }
+  function releaseAll(fast) { [...held.keys()].forEach(s => noteOff(s, fast)); }
+
+  // ---------- パソコンのキーボード ----------
+  function isTyping(e) {
+    const t = e.target;
+    if (!t) return false;
+    if (t.isContentEditable) return true;
+    if (t.tagName === "TEXTAREA") return true;
+    return t.tagName === "INPUT" && /^(text|search|url)$/i.test(t.type);
+  }
+  function indexFromEvent(e) {
+    if (e.code in CODE_TO_I) return CODE_TO_I[e.code];
+    const k = (e.key || "").toLowerCase();
+    return k in CHAR_TO_I ? CHAR_TO_I[k] : -1;
+  }
+  window.addEventListener("keydown", e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTyping(e)) return;
+    if (e.code === "KeyM" || (e.key || "").toLowerCase() === "m") {
+      e.preventDefault();
+      if (!mKey) { mKey = true; updateM(); }
+      return;
+    }
+    if (e.code === "Space" || e.key === " ") {
+      e.preventDefault();
+      if (!e.repeat) togglePlay();
+      return;
+    }
+    const i = indexFromEvent(e);
+    if (i < 0) return;
+    e.preventDefault();
+    const src = "k:" + (e.code || e.key);
+    if (e.repeat || held.has(src)) return;
+    noteOn(src, i);
+  });
+  window.addEventListener("keyup", e => {
+    if (e.code === "KeyM" || (e.key || "").toLowerCase() === "m") { mKey = false; updateM(); return; }
+    noteOff("k:" + (e.code || e.key));
+  });
+
+  // ---------- 動画プレーヤーにフォーカスが移ったら鍵盤に戻す ----------
+  const focusNote = $("focusNote");
+  const mainEl = $("main");
+  function iframeHasFocus() {
+    const a = document.activeElement;
+    return !!a && a.tagName === "IFRAME";
+  }
+  function reclaimFocus() {
+    try { mainEl.focus({ preventScroll: true }); } catch (e) { mainEl.focus(); }
+    focusNote.hidden = !iframeHasFocus();
+  }
+  window.addEventListener("blur", () => {
+    releaseAll();
+    mKey = false; updateM();
+    setTimeout(() => {
+      if (iframeHasFocus()) {
+        focusNote.hidden = false;
+        setTimeout(() => { if (iframeHasFocus()) reclaimFocus(); }, 600);
+      }
+    }, 0);
+  });
+  window.addEventListener("focus", () => { focusNote.hidden = true; });
+  focusNote.addEventListener("click", reclaimFocus);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { releaseAll(); mKey = false; mTouch = false; updateM(); } });
+
+  // ---------- マウス・タッチ ----------
+  const keyAt = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const k = el && el.closest && el.closest(".key");
+    return k ? +k.dataset.i : -1;
+  };
+  keysEl.addEventListener("pointerdown", e => {
+    const k = e.target.closest(".key");
+    if (!k) return;
+    e.preventDefault();
+    try { keysEl.setPointerCapture(e.pointerId); } catch (err) {}
+    noteOn("p:" + e.pointerId, +k.dataset.i);
+  });
+  keysEl.addEventListener("pointermove", e => {
+    const src = "p:" + e.pointerId;
+    const h = held.get(src);
+    if (!h) return;
+    const i = keyAt(e.clientX, e.clientY);
+    if (i === h.i) return;
+    if (i < 0) noteOff(src); else noteOn(src, i);
+  });
+  const ptrEnd = e => noteOff("p:" + e.pointerId);
+  keysEl.addEventListener("pointerup", ptrEnd);
+  keysEl.addEventListener("pointercancel", ptrEnd);
+  keysEl.addEventListener("lostpointercapture", ptrEnd);
+  keysEl.addEventListener("contextmenu", e => e.preventDefault());
+
+  // 画面の「短調 M」ボタン：押している間だけ M を押したのと同じ
+  const mDown = e => { e.preventDefault(); try { mBtn.setPointerCapture(e.pointerId); } catch (err) {} mTouch = true; updateM(); };
+  const mUp = () => { mTouch = false; updateM(); };
+  mBtn.addEventListener("pointerdown", mDown);
+  mBtn.addEventListener("pointerup", mUp);
+  mBtn.addEventListener("pointercancel", mUp);
+  mBtn.addEventListener("lostpointercapture", mUp);
+  mBtn.addEventListener("contextmenu", e => e.preventDefault());
+
+  // ---------- コントロール ----------
+  kbVolEl.addEventListener("input", () => {
+    store.set("kbVol", +kbVolEl.value);
+    if (ctx) master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
+  });
+  holdSel.addEventListener("change", () => { store.set("hold", +holdSel.value); holdSel.blur(); });
+  const octLow = $("octLow"), octHigh = $("octHigh");
+  function setOct(m) {
+    octBase = m; store.set("octBase", m);
+    octLow.setAttribute("aria-pressed", m === 48);
+    octHigh.setAttribute("aria-pressed", m === 60);
+    render();
+  }
+  octLow.addEventListener("click", () => setOct(48));
+  octHigh.addEventListener("click", () => setOct(60));
+  document.querySelectorAll(".controls button, .controls input, .ytbar button, .ytbar input, .kp-btns button").forEach(el =>
+    el.addEventListener("pointerup", () => setTimeout(() => el.blur(), 0)));
+
+  // ---------- YouTube ----------
+  const ytMsg = $("ytMsg"), btnPlay = $("btnPlay"), ytVolEl = $("ytVol"), urlIn = $("urlIn");
+  ytVolEl.value = store.get("ytVol", 60);
+  let player = null, playerReady = false;
+
+  if (location.protocol === "file:") $("fileWarn").hidden = false;
+
+  function parseId(s) {
+    s = (s || "").trim();
+    if (/^[\w-]{11}$/.test(s)) return s;
+    try {
+      const u = new URL(s);
+      const host = u.hostname.replace(/^www\.|^m\.|^music\./, "");
+      if (host === "youtu.be") { const id = u.pathname.slice(1, 12); return /^[\w-]{11}$/.test(id) ? id : null; }
+      if (host === "youtube.com" || host === "youtube-nocookie.com") {
+        const v = u.searchParams.get("v");
+        if (v && /^[\w-]{11}$/.test(v)) return v;
+        const m = u.pathname.match(/^\/(?:embed|shorts|live|v)\/([\w-]{11})/);
+        if (m) return m[1];
+      }
+    } catch (e) {}
+    return null;
+  }
+  function showYtMsg(t) { ytMsg.textContent = t; ytMsg.hidden = !t; }
+
+  const firstId = parseId(DEFAULT_URL);
+  urlIn.value = DEFAULT_URL;
+
+  window.onYouTubeIframeAPIReady = () => {
+    const vars = { playsinline: 1, rel: 0 };
+    if (/^https?:$/.test(location.protocol)) vars.origin = location.origin;
+    player = new YT.Player("player", {
+      videoId: firstId,
+      playerVars: vars,
+      events: {
+        onReady: () => {
+          playerReady = true;
+          btnPlay.disabled = false;
+          try { player.setVolume(+ytVolEl.value); } catch (e) {}
+        },
+        onStateChange: () => { showYtMsg(""); },
+        onError: e => {
+          const c = e && e.data;
+          if (c === 101 || c === 150) showYtMsg("この動画は埋め込み再生が許可されていません。別の動画を選んでください。");
+          else if (c === 100) showYtMsg("動画が見つかりません（削除または非公開）。");
+          else if (c === 2) showYtMsg("URLまたは動画IDが正しくありません。");
+          else if (c === 153) showYtMsg("YouTubeが再生を拒否しました（エラー153）。GitHub Pages や http://localhost から開いてください。");
+          else showYtMsg("再生できませんでした（エラー " + c + "）。");
+        },
+      },
+    });
+  };
+  (function loadApi() {
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => showYtMsg("YouTubeのプレーヤーを読み込めませんでした。ネットワーク接続を確認してください。");
+    document.head.appendChild(s);
+  })();
+
+  $("urlForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const id = parseId(urlIn.value);
+    if (!id) { showYtMsg("YouTubeのURLとして読み取れませんでした。"); return; }
+    showYtMsg("");
+    if (playerReady) player.cueVideoById(id);
+    // 新しい曲なので鍵盤を「ド＝C」に戻す
+    history.length = 0;
+    cancelCand("");
+    setKey(0, "major", false);
+    holdText.textContent = "新しい動画を読み込みました。鍵盤は ド＝C に戻っています。";
+    urlIn.blur();
+  });
+
+  function togglePlay() {
+    if (!playerReady) return;
+    try {
+      const st = player.getPlayerState();
+      if (st === 1 || st === 3) player.pauseVideo(); else player.playVideo();
+    } catch (e) {}
+  }
+  btnPlay.addEventListener("click", togglePlay);
+  ytVolEl.addEventListener("input", () => {
+    store.set("ytVol", +ytVolEl.value);
+    if (playerReady) { try { player.setVolume(+ytVolEl.value); if (+ytVolEl.value > 0) player.unMute(); } catch (e) {} }
+  });
+
+  // ---------- 初期表示 ----------
+  setOct(octBase);
+  holdText.textContent = "主音だと思った鍵盤を長押しすると移調します（短調は M を一緒に押す）";
+})();
+</script>
+</body>
+</html>
