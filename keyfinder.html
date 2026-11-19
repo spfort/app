@@ -259,6 +259,11 @@
       <li>動画プレーヤーをクリックした後は、少しすると自動的に鍵盤の操作に戻ります。キーが効かないときはページの余白をクリックしてください。</li>
     </ul>
   </div>
+<details id="diag" style="margin:18px 4px 0;color:#9a8e78;font-size:12px">
+  <summary style="cursor:pointer">キー入力の確認（不具合調査用）</summary>
+  <div style="margin:6px 0">Shiftの状態：<span id="diagState" class="mono"></span></div>
+  <pre id="diagLog" class="mono" style="margin:0;white-space:pre-wrap;line-height:1.6"></pre>
+</details>
 </main>
 <div id="focusNote" hidden>キーボードで弾くには、ここをクリック</div>
 
@@ -601,6 +606,17 @@
   }
   function releaseAll(fast) { [...held.keys()].forEach(s => noteOff(s, fast)); }
 
+  // ---------- 不具合調査用の表示（開いているときだけ記録） ----------
+  const diagEl = $("diag"), diagLog = $("diagLog"), diagState = $("diagState");
+  const diagLines = [];
+  function logKey(type, e) {
+    if (!diagEl.open) return;
+    diagLines.unshift(`${type.padEnd(4)} key=${JSON.stringify(e.key)} code=${e.code || "(空)"} location=${e.location} keyCode=${e.keyCode} shiftKey=${e.shiftKey} repeat=${e.repeat}`);
+    diagLines.length = Math.min(diagLines.length, 12);
+    diagLog.textContent = diagLines.join("\n");
+    setTimeout(() => { diagState.textContent = `左=${sh.keyL || sh.btnL} 右=${sh.keyR || sh.btnR} → ${octShift() > 0 ? "+1" : octShift() < 0 ? "-1" : "±0"}オクターブ`; }, 0);
+  }
+
   // ---------- パソコンのキーボード ----------
   function isTyping(e) {
     const t = e.target;
@@ -614,16 +630,33 @@
     const k = (e.key || "").toLowerCase();
     return k in CHAR_TO_I ? CHAR_TO_I[k] : -1;
   }
+  // 左右どちらのShiftか。
+  // 環境によって右Shiftの code が "ShiftRight" にならないことがあるため、
+  // 「ShiftLeft と分かるもの（code か location=1）」以外の Shift はすべて右として扱う。
+  function shiftSide(e) {
+    if (e.code === "ShiftLeft") return "keyL";
+    if (e.code === "ShiftRight") return "keyR";
+    if (e.key === "Shift" || e.keyCode === 16) return e.location === 1 ? "keyL" : "keyR";
+    return null;
+  }
+  // Windows では左右のShiftを重ねて押すと、片方を離した通知が届かないことがある。
+  // どのキー操作でも「Shiftが1つも押されていない」と分かったら、記録を消して自己修復する。
+  function syncShift(e) {
+    if (!e.shiftKey && (sh.keyL || sh.keyR)) { sh.keyL = sh.keyR = false; updateShift(); }
+  }
   window.addEventListener("keydown", e => {
+    logKey("down", e);
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (isTyping(e)) return;
+    const side = shiftSide(e);
+    if (side) {
+      if (!sh[side]) { sh[side] = true; updateShift(); retuneHeld(); }
+      return;
+    }
+    syncShift(e);
     if (e.code === "KeyM" || (e.key || "").toLowerCase() === "m") {
       e.preventDefault();
       if (!mKey) { mKey = true; updateM(); }
-      return;
-    }
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight") {
-      if (!e.repeat) { sh[e.code === "ShiftLeft" ? "keyL" : "keyR"] = true; updateShift(); retuneHeld(); }
       return;
     }
     if (e.code === "Space" || e.key === " ") {
@@ -649,8 +682,16 @@
     noteOn(src, i);
   });
   window.addEventListener("keyup", e => {
+    logKey("up", e);
+    const side = shiftSide(e);
+    if (side) {
+      sh[side] = false;
+      if (!e.shiftKey) sh.keyL = sh.keyR = false;   // もう片方も離れているなら両方消す
+      updateShift();
+      return;
+    }
+    syncShift(e);
     if (e.code === "KeyM" || (e.key || "").toLowerCase() === "m") { mKey = false; updateM(); return; }
-    if (e.code === "ShiftLeft" || e.code === "ShiftRight") { sh[e.code === "ShiftLeft" ? "keyL" : "keyR"] = false; updateShift(); return; }
     if (e.code === "Space" || e.key === " ") { e.preventDefault(); return; }
     noteOff("k:" + (e.code || e.key));
   });
@@ -688,6 +729,7 @@
     return k ? +k.dataset.i : -1;
   };
   keysEl.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse") syncShift(e);
     const k = e.target.closest(".key");
     if (!k) return;
     e.preventDefault();
