@@ -149,6 +149,17 @@
     padding:6px 10px; cursor:pointer;
   }
   .seg button[aria-pressed=true]{background:#5a4420; color:var(--brass-hi)}
+  .octctl{display:flex; align-items:center; gap:6px}
+  .octctl button{font:inherit; font-size:13px; color:var(--ink); background:#2a2116; border:1px solid var(--line); border-radius:8px; width:34px; height:32px; cursor:pointer}
+  .octctl button:disabled{opacity:.35; cursor:default}
+  #octLabel{min-width:118px; text-align:center; font-variant-numeric:tabular-nums}
+  #spBtn{
+    font:700 14px/1 inherit; font-family:inherit; color:var(--brass-hi); background:#2a2116;
+    border:1.5px solid var(--brass); border-radius:10px; padding:10px 16px; cursor:pointer;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  }
+  #spBtn.on{background:var(--brass); color:#1a140c}
+  #kb.up{box-shadow:0 0 0 2px var(--brass), 0 18px 40px rgba(0,0,0,.55)}
   #mBtn{
     font:700 14px/1 inherit; font-family:inherit; color:var(--minor); background:#141c28;
     border:1.5px solid #3f6aa3; border-radius:10px; padding:10px 16px; cursor:pointer;
@@ -195,7 +206,7 @@
   </div>
 
   <div class="ytbar">
-    <button class="btn" id="btnPlay" type="button" disabled>再生 / 一時停止 <span class="mono" style="opacity:.6">Space</span></button>
+    <button class="btn" id="btnPlay" type="button" disabled>再生 / 一時停止 <span class="mono" style="opacity:.6">Enter</span></button>
     <label>動画の音量 <input type="range" id="ytVol" min="0" max="100" value="60"></label>
   </div>
 
@@ -218,6 +229,7 @@
 
   <div class="controls">
     <button type="button" id="mBtn" aria-pressed="false">短調 M</button>
+    <button type="button" id="spBtn" aria-pressed="false">1オクターブ上 Space</button>
     <label>鍵盤の音量 <input type="range" id="kbVol" min="0" max="100" value="70"></label>
     <label>長押し時間
       <select id="holdSel">
@@ -227,15 +239,17 @@
         <option value="5">5秒</option>
       </select>
     </label>
-    <div class="seg" role="group" aria-label="鍵盤の音域">
-      <button type="button" id="octLow" aria-pressed="true">低め（ド＝3オクターブ目）</button>
-      <button type="button" id="octHigh" aria-pressed="false">高め（＋1オクターブ）</button>
+    <div class="octctl" role="group" aria-label="鍵盤のオクターブ">
+      <button type="button" id="octDown" aria-label="1オクターブ下げる">◀</button>
+      <span id="octLabel"></span>
+      <button type="button" id="octUp" aria-label="1オクターブ上げる">▶</button>
     </div>
   </div>
 
   <div class="hint">
     <span id="keyList"></span> が「<span id="keyListFrom">ド</span>」から1オクターブ上まで。<kbd>+</kbd> は L の右隣のキー（JIS配列の <kbd>;</kbd>/<kbd>+</kbd>）です。
     <ul>
+      <li><b>オクターブ</b>：<kbd>Space</kbd> を押しながら弾くと1オクターブ上の音が出ます。<kbd>←</kbd><kbd>→</kbd> で鍵盤の基本のオクターブを3段階で切り替えます（全体で C2〜C6 程度）。動画の再生／一時停止は <kbd>Enter</kbd> です。</li>
       <li><b>長調</b>：主音だと思った鍵盤を1つだけ3秒押し続けると、その音が新しい「ド」になります。</li>
       <li><b>短調</b>：<kbd>M</kbd>（または画面の「短調 M」ボタン）を押したまま主音を3秒長押しすると、その音が「ラ」になるように移調し、鍵盤がラから始まる並びに変わります（例：ソ＋M → Gマイナー → ド＝A♯）。短調の鍵盤は <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>D</kbd><kbd>R</kbd><kbd>F</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>+</kbd> です。</li>
       <li>2つ以上の鍵盤を同時に押すと長押しは取り消されます（和音や持続音での確認中に誤って移調しないため）。</li>
@@ -296,13 +310,19 @@
   // ---------- 調の状態 ----------
   let doPc = 0;            // 「ド」の音名（0=C … 11=B）
   let mode = "major";      // 最後に決めたのが長調か短調か（表示用）
-  let octBase = store.get("octBase", 48) === 60 ? 60 : 48;   // C3 = MIDI 48
+  // 基本オクターブ：鍵盤の左端の音を何オクターブ目に置くか（2〜4、初期値3 = C3〜B3）
+  const OCT_MIN = 2, OCT_MAX = 4;
+  let octK = Math.min(OCT_MAX, Math.max(OCT_MIN, +store.get("octK", 3) || 3));
+  let octBase = 12 * (octK + 1);
+  // Space（または画面のボタン）で1オクターブ上
+  let spKey = false, spTouch = false;
+  const upShift = () => (spKey || spTouch) ? 12 : 0;
   const history = [];
 
   // 鍵盤の左端の音名：長調はド、短調はラ（どちらも3オクターブ目に置く）
   const startPc = () => mode === "minor" ? (doPc + 9) % 12 : doPc;
   const midiOf = i => octBase + startPc() + i;
-  const freqOf = i => 440 * Math.pow(2, (midiOf(i) - 69) / 12);
+  const freqOf = i => 440 * Math.pow(2, (midiOf(i) + upShift() - 69) / 12);
   const nameOf = m => PC[m % 12] + (Math.floor(m / 12) - 1);
   const majorName = pc => PC[pc] + "メジャー";
   const minorName = pc => PC[pc] + "マイナー";
@@ -345,10 +365,16 @@
   const holdText = $("holdText"), holdBar = $("holdBar"), holdFill = holdBar.firstElementChild;
   const btnUndo = $("btnUndo"), btnReset = $("btnReset");
 
+  const rangeText = () => {
+    const u = upShift();
+    return `${nameOf(midiOf(0) + u)}–${nameOf(midiOf(12) + u)}` + (u ? "（Space）" : "");
+  };
   function render() {
     buildKeys();
+    kbEl.classList.toggle("up", upShift() > 0);
+    $("octLabel").textContent = ["低", "中", "高"][octK - OCT_MIN] + `（${nameOf(midiOf(0))}〜）`;
     keyEls.forEach((el, i) => {
-      el.querySelector(".nm").textContent = nameOf(midiOf(i));
+      el.querySelector(".nm").textContent = nameOf(midiOf(i) + upShift());
       const isTonic = i === 0 || i === 12;
       el.classList.toggle("tonic", isTonic);
       el.classList.toggle("minor", isTonic && mode === "minor");
@@ -356,10 +382,10 @@
     const relMinor = (doPc + 9) % 12;
     if (mode === "minor") {
       keyNameEl.textContent = minorName(relMinor);
-      keyDetailEl.textContent = `ド＝${PC[doPc]}（${majorName(doPc)}と同じ音階）・ 鍵盤 ${nameOf(midiOf(0))}–${nameOf(midiOf(12))}`;
+      keyDetailEl.textContent = `ド＝${PC[doPc]}（${majorName(doPc)}と同じ音階）・ 鍵盤 ${rangeText()}`;
     } else {
       keyNameEl.textContent = majorName(doPc);
-      keyDetailEl.textContent = `ド＝${PC[doPc]} ・ 平行調 ${minorName(relMinor)} ・ 鍵盤 ${nameOf(midiOf(0))}–${nameOf(midiOf(12))}`;
+      keyDetailEl.textContent = `ド＝${PC[doPc]} ・ 平行調 ${minorName(relMinor)} ・ 鍵盤 ${rangeText()}`;
     }
     keyNameEl.classList.toggle("minor", mode === "minor");
     btnUndo.disabled = history.length === 0;
@@ -574,7 +600,17 @@
     }
     if (e.code === "Space" || e.key === " ") {
       e.preventDefault();
+      if (!spKey) { spKey = true; updateSp(); }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
       if (!e.repeat) togglePlay();
+      return;
+    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      setOct(octK + (e.key === "ArrowRight" ? 1 : -1));
       return;
     }
     const i = indexFromEvent(e);
@@ -586,6 +622,7 @@
   });
   window.addEventListener("keyup", e => {
     if (e.code === "KeyM" || (e.key || "").toLowerCase() === "m") { mKey = false; updateM(); return; }
+    if (e.code === "Space" || e.key === " ") { e.preventDefault(); spKey = false; updateSp(); return; }
     noteOff("k:" + (e.code || e.key));
   });
 
@@ -603,6 +640,7 @@
   window.addEventListener("blur", () => {
     releaseAll();
     mKey = false; updateM();
+    spKey = false; updateSp();
     setTimeout(() => {
       if (iframeHasFocus()) {
         focusNote.hidden = false;
@@ -612,7 +650,7 @@
   });
   window.addEventListener("focus", () => { focusNote.hidden = true; });
   focusNote.addEventListener("click", reclaimFocus);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { releaseAll(); mKey = false; mTouch = false; updateM(); } });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { releaseAll(); mKey = false; mTouch = false; updateM(); spKey = false; spTouch = false; updateSp(); } });
 
   // ---------- マウス・タッチ ----------
   const keyAt = (x, y) => {
@@ -655,21 +693,40 @@
   mBtn.addEventListener("lostpointercapture", mUp);
   mBtn.addEventListener("contextmenu", e => e.preventDefault());
 
+  // 画面の「1オクターブ上」ボタン：押している間だけ Space と同じ
+  const spBtn = $("spBtn");
+  let spShown = false;
+  function updateSp() {
+    const on = upShift() > 0;
+    spBtn.classList.toggle("on", on);
+    spBtn.setAttribute("aria-pressed", on);
+    if (on !== spShown) { spShown = on; render(); }
+  }
+  const spDown = e => { e.preventDefault(); try { spBtn.setPointerCapture(e.pointerId); } catch (err) {} spTouch = true; updateSp(); };
+  const spUp = () => { spTouch = false; updateSp(); };
+  spBtn.addEventListener("pointerdown", spDown);
+  spBtn.addEventListener("pointerup", spUp);
+  spBtn.addEventListener("pointercancel", spUp);
+  spBtn.addEventListener("lostpointercapture", spUp);
+  spBtn.addEventListener("contextmenu", e => e.preventDefault());
+
   // ---------- コントロール ----------
   kbVolEl.addEventListener("input", () => {
     store.set("kbVol", +kbVolEl.value);
     if (ctx) master.gain.setTargetAtTime(volume(), ctx.currentTime, 0.02);
   });
   holdSel.addEventListener("change", () => { store.set("hold", +holdSel.value); holdSel.blur(); });
-  const octLow = $("octLow"), octHigh = $("octHigh");
-  function setOct(m) {
-    octBase = m; store.set("octBase", m);
-    octLow.setAttribute("aria-pressed", m === 48);
-    octHigh.setAttribute("aria-pressed", m === 60);
+  const octDown = $("octDown"), octUp = $("octUp"), octLabel = $("octLabel");
+  function setOct(k) {
+    octK = Math.min(OCT_MAX, Math.max(OCT_MIN, k));
+    octBase = 12 * (octK + 1);
+    store.set("octK", octK);
+    octDown.disabled = octK === OCT_MIN;
+    octUp.disabled = octK === OCT_MAX;
     render();
   }
-  octLow.addEventListener("click", () => setOct(48));
-  octHigh.addEventListener("click", () => setOct(60));
+  octDown.addEventListener("click", () => setOct(octK - 1));
+  octUp.addEventListener("click", () => setOct(octK + 1));
   document.querySelectorAll(".controls button, .controls input, .ytbar button, .ytbar input, .kp-btns button").forEach(el =>
     el.addEventListener("pointerup", () => setTimeout(() => el.blur(), 0)));
 
@@ -760,7 +817,7 @@
   });
 
   // ---------- 初期表示 ----------
-  setOct(octBase);
+  setOct(octK);
   holdText.textContent = "主音だと思った鍵盤を長押しすると移調します（短調は M を一緒に押す）";
 })();
 </script>
