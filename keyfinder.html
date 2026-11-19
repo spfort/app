@@ -208,7 +208,7 @@
 
   <div class="ytbar">
     <button class="btn" id="btnPlay" type="button" disabled>再生 / 一時停止 <span class="mono" style="opacity:.6">Enter</span></button>
-    <label>動画の音量 <input type="range" id="ytVol" min="0" max="100" value="60"></label>
+    <label>動画の音量 <input type="range" id="ytVol" min="0" max="100" value="100"></label>
   </div>
 
   <section class="keypanel" aria-live="polite">
@@ -312,9 +312,9 @@
   // ---------- 調の状態 ----------
   let doPc = 0;            // 「ド」の音名（0=C … 11=B）
   let mode = "major";      // 最後に決めたのが長調か短調か（表示用）
-  // 基本オクターブ：鍵盤の左端の音を何オクターブ目に置くか（2〜4、初期値3 = C3〜B3）
-  const OCT_MIN = 2, OCT_MAX = 4;
-  let octK = Math.min(OCT_MAX, Math.max(OCT_MIN, +store.get("octK", 3) || 3));
+  // 基本オクターブ：鍵盤の左端の音を何オクターブ目に置くか（3〜5、初期値4 = C4〜B4）
+  const OCT_MIN = 3, OCT_MAX = 5;
+  let octK = Math.min(OCT_MAX, Math.max(OCT_MIN, +store.get("octK2", 4) || 4));
   let octBase = 12 * (octK + 1);
   // 左Shiftで1オクターブ下、右Shiftで1オクターブ上（画面のボタンも同じ。両方押すと打ち消し）
   const sh = { keyL: false, keyR: false, btnL: false, btnR: false };
@@ -752,7 +752,7 @@
   function setOct(k) {
     octK = Math.min(OCT_MAX, Math.max(OCT_MIN, k));
     octBase = 12 * (octK + 1);
-    store.set("octK", octK);
+    store.set("octK2", octK);
     octDown.disabled = octK === OCT_MIN;
     octUp.disabled = octK === OCT_MAX;
     render();
@@ -764,7 +764,7 @@
 
   // ---------- YouTube ----------
   const ytMsg = $("ytMsg"), btnPlay = $("btnPlay"), ytVolEl = $("ytVol"), urlIn = $("urlIn");
-  ytVolEl.value = store.get("ytVol", 60);
+  ytVolEl.value = store.get("ytVol2", 100);
   let player = null, playerReady = false;
 
   if (location.protocol === "file:") $("fileWarn").hidden = false;
@@ -844,7 +844,7 @@
   }
   btnPlay.addEventListener("click", togglePlay);
   ytVolEl.addEventListener("input", () => {
-    store.set("ytVol", +ytVolEl.value);
+    store.set("ytVol2", +ytVolEl.value);
     if (playerReady) { try { player.setVolume(+ytVolEl.value); if (+ytVolEl.value > 0) player.unMute(); } catch (e) {} }
   });
 
