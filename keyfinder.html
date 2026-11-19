@@ -234,10 +234,10 @@
   </div>
 
   <div class="hint">
-    <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>E</kbd><kbd>D</kbd><kbd>F</kbd><kbd>U</kbd><kbd>J</kbd><kbd>I</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>+</kbd> が「ド」から1オクターブ上の「ド」まで。<kbd>+</kbd> は L の右隣のキー（JIS配列の <kbd>;</kbd>/<kbd>+</kbd>）です。
+    <span id="keyList"></span> が「<span id="keyListFrom">ド</span>」から1オクターブ上まで。<kbd>+</kbd> は L の右隣のキー（JIS配列の <kbd>;</kbd>/<kbd>+</kbd>）です。
     <ul>
       <li><b>長調</b>：主音だと思った鍵盤を1つだけ3秒押し続けると、その音が新しい「ド」になります。</li>
-      <li><b>短調</b>：<kbd>M</kbd>（または画面の「短調 M」ボタン）を押したまま主音を3秒長押しすると、その音が「ラ」になるように移調します（例：ソ＋M → Gマイナー → ド＝A♯）。</li>
+      <li><b>短調</b>：<kbd>M</kbd>（または画面の「短調 M」ボタン）を押したまま主音を3秒長押しすると、その音が「ラ」になるように移調し、鍵盤がラから始まる並びに変わります（例：ソ＋M → Gマイナー → ド＝A♯）。短調の鍵盤は <kbd>A</kbd><kbd>W</kbd><kbd>S</kbd><kbd>D</kbd><kbd>R</kbd><kbd>F</kbd><kbd>U</kbd><kbd>J</kbd><kbd>K</kbd><kbd>O</kbd><kbd>L</kbd><kbd>P</kbd><kbd>+</kbd> です。</li>
       <li>2つ以上の鍵盤を同時に押すと長押しは取り消されます（和音や持続音での確認中に誤って移調しないため）。</li>
       <li>鍵盤の「ド」「ミ」などは移動ド、下の英字が実際の音名です。新しい動画を読み込むと「ド＝C」に戻ります。</li>
       <li>動画プレーヤーをクリックした後は、少しすると自動的に鍵盤の操作に戻ります。キーが効かないときはページの余白をクリックしてください。</li>
@@ -259,8 +259,8 @@
     set(k, v) { try { localStorage.setItem("keyfinder." + k, JSON.stringify(v)); } catch (e) {} },
   };
 
-  // ---------- 鍵盤定義（移動ド13鍵） ----------
-  const NOTES = [
+  // ---------- 鍵盤定義（13鍵。長調はドから、短調はラから） ----------
+  const MAJOR = [
     {code:"KeyA",      cap:"A", jp:"ド",    black:false},
     {code:"KeyW",      cap:"W", jp:"ド♯",   black:true },
     {code:"KeyS",      cap:"S", jp:"レ",    black:false},
@@ -275,9 +275,23 @@
     {code:"KeyL",      cap:"L", jp:"シ",    black:false},
     {code:"Semicolon", cap:"+", jp:"ド",    black:false},
   ];
-  const CODE_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.code, i]));
-  const CHAR_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.cap.toLowerCase(), i]));
-  CHAR_TO_I[";"] = 12;
+  // 短調：ラから始まる。白鍵は同じ A S D F J K L +、黒鍵は間の上段キー
+  const MINOR = [
+    {code:"KeyA",      cap:"A", jp:"ラ",    black:false},
+    {code:"KeyW",      cap:"W", jp:"ラ♯",   black:true },
+    {code:"KeyS",      cap:"S", jp:"シ",    black:false},
+    {code:"KeyD",      cap:"D", jp:"ド",    black:false},
+    {code:"KeyR",      cap:"R", jp:"ド♯",   black:true },
+    {code:"KeyF",      cap:"F", jp:"レ",    black:false},
+    {code:"KeyU",      cap:"U", jp:"レ♯",   black:true },
+    {code:"KeyJ",      cap:"J", jp:"ミ",    black:false},
+    {code:"KeyK",      cap:"K", jp:"ファ",  black:false},
+    {code:"KeyO",      cap:"O", jp:"ファ♯", black:true },
+    {code:"KeyL",      cap:"L", jp:"ソ",    black:false},
+    {code:"KeyP",      cap:"P", jp:"ソ♯",   black:true },
+    {code:"Semicolon", cap:"+", jp:"ラ",    black:false},
+  ];
+  let NOTES = MAJOR, CODE_TO_I = {}, CHAR_TO_I = {};
 
   // ---------- 調の状態 ----------
   let doPc = 0;            // 「ド」の音名（0=C … 11=B）
@@ -285,36 +299,57 @@
   let octBase = store.get("octBase", 48) === 60 ? 60 : 48;   // C3 = MIDI 48
   const history = [];
 
-  const midiOf = i => octBase + doPc + i;
+  // 鍵盤の左端の音名：長調はド、短調はラ（どちらも3オクターブ目に置く）
+  const startPc = () => mode === "minor" ? (doPc + 9) % 12 : doPc;
+  const midiOf = i => octBase + startPc() + i;
   const freqOf = i => 440 * Math.pow(2, (midiOf(i) - 69) / 12);
   const nameOf = m => PC[m % 12] + (Math.floor(m / 12) - 1);
   const majorName = pc => PC[pc] + "メジャー";
   const minorName = pc => PC[pc] + "マイナー";
 
+  const held = new Map();            // sourceId -> {i, voice}（i = -1 は移調前の鍵盤で押した音）
+  const counts = new Array(13).fill(0);
+
   // ---------- DOM ----------
   const $ = id => document.getElementById(id);
-  const keysEl = $("keys"), kbEl = $("kb");
-  const keyEls = [];
-  let whiteIdx = 0;
-  NOTES.forEach((n, i) => {
-    const el = document.createElement("div");
-    el.className = "key " + (n.black ? "black" : "white");
-    el.dataset.i = i;
-    el.innerHTML = `<span class="cap">${n.cap}</span><span class="jp">${n.jp}</span><span class="nm"></span>`;
-    if (n.black) el.style.left = `calc(${whiteIdx * 12.5}% - 3.7%)`;
-    else whiteIdx++;
-    keysEl.appendChild(el);
-    keyEls.push(el);
-  });
+  const keysEl = $("keys"), kbEl = $("kb"), keyListEl = $("keyList");
+  let keyEls = [];
+  function buildKeys() {
+    const want = mode === "minor" ? MINOR : MAJOR;
+    if (want === NOTES && keyEls.length) return;
+    NOTES = want;
+    CODE_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.code, i]));
+    CHAR_TO_I = Object.fromEntries(NOTES.map((n, i) => [n.cap.toLowerCase(), i]));
+    CHAR_TO_I[";"] = 12;
+    // 押さえたままの音は鳴らし続け、表示だけ新しい鍵盤に切り替える
+    held.forEach(h => { h.i = -1; });
+    counts.fill(0);
+    keysEl.textContent = "";
+    keyEls = [];
+    let whiteIdx = 0;
+    NOTES.forEach((n, i) => {
+      const el = document.createElement("div");
+      el.className = "key " + (n.black ? "black" : "white");
+      el.dataset.i = i;
+      el.innerHTML = `<span class="cap">${n.cap}</span><span class="jp">${n.jp}</span><span class="nm"></span>`;
+      if (n.black) el.style.left = `calc(${whiteIdx * 12.5}% - 3.7%)`;
+      else whiteIdx++;
+      keysEl.appendChild(el);
+      keyEls.push(el);
+    });
+    keyListEl.innerHTML = NOTES.map(n => `<kbd>${n.cap}</kbd>`).join("");
+    $("keyListFrom").textContent = NOTES[0].jp;
+  }
 
   const keyNameEl = $("keyName"), keyDetailEl = $("keyDetail");
   const holdText = $("holdText"), holdBar = $("holdBar"), holdFill = holdBar.firstElementChild;
   const btnUndo = $("btnUndo"), btnReset = $("btnReset");
 
   function render() {
+    buildKeys();
     keyEls.forEach((el, i) => {
       el.querySelector(".nm").textContent = nameOf(midiOf(i));
-      const isTonic = mode === "minor" ? i === 9 : (i === 0 || i === 12);
+      const isTonic = i === 0 || i === 12;
       el.classList.toggle("tonic", isTonic);
       el.classList.toggle("minor", isTonic && mode === "minor");
     });
@@ -338,7 +373,7 @@
   }
 
   function transposeFrom(i, minor) {
-    const pc = (doPc + i) % 12;            // 押した鍵盤の実際の音名
+    const pc = (startPc() + i) % 12;       // 押した鍵盤の実際の音名
     const newDo = minor ? (pc + 3) % 12 : pc;
     setKey(newDo, minor ? "minor" : "major", true);
     kbEl.classList.remove("flash"); void kbEl.offsetWidth; kbEl.classList.add("flash");
@@ -434,8 +469,6 @@
   }
 
   // ---------- 発音管理と長押し判定 ----------
-  const held = new Map();            // sourceId -> {i, voice}
-  const counts = new Array(NOTES.length).fill(0);
   let cand = null;                   // 長押し候補 {src, i, start}
   let rafId = 0;
 
@@ -475,7 +508,7 @@
     el.classList.toggle("mprev", minor);
     holdFill.style.width = (p * 100) + "%";
     holdBar.classList.toggle("minor", minor);
-    const pc = (doPc + cand.i) % 12;
+    const pc = (startPc() + cand.i) % 12;
     const sec = (p * holdMs() / 1000).toFixed(1), tot = (holdMs() / 1000).toFixed(0);
     holdText.innerHTML = minor
       ? `${NOTES[cand.i].jp}（${PC[pc]}）＋M を長押し中 ${sec} / ${tot} 秒 → <b class="minor">${minorName(pc)}</b>（ド＝${PC[(pc + 3) % 12]}）`
@@ -510,8 +543,10 @@
     if (!h) return;
     held.delete(src);
     h.voice.release(fast);
-    counts[h.i] = Math.max(0, counts[h.i] - 1);
-    if (counts[h.i] === 0) keyEls[h.i].classList.remove("on");
+    if (h.i >= 0) {
+      counts[h.i] = Math.max(0, counts[h.i] - 1);
+      if (counts[h.i] === 0) keyEls[h.i].classList.remove("on");
+    }
     if (cand && cand.src === src) cancelCand("");
   }
   function releaseAll(fast) { [...held.keys()].forEach(s => noteOff(s, fast)); }
@@ -597,6 +632,11 @@
     const h = held.get(src);
     if (!h) return;
     const i = keyAt(e.clientX, e.clientY);
+    if (h.i === -1 && i >= 0 && !h.moved) {
+      // 移調直後：指の下の鍵盤を引き継ぐだけで鳴らし直さない
+      h.moved = true; h.i = i; counts[i]++; keyEls[i].classList.add("on");
+      return;
+    }
     if (i === h.i) return;
     if (i < 0) noteOff(src); else noteOn(src, i);
   });
